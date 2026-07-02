@@ -24,11 +24,12 @@ builds:
 
 archives:
   - id: default
-    builds: [devinmonitor]
-    format: tar.gz
+    ids: [devinmonitor]
+    formats:
+      - tar.gz
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_
       {{- title .Os }}_
