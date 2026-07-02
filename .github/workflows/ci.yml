@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Build & Vet
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['stable']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Go mod download
+        run: go mod download
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Build (linux/amd64)
+        run: go build -ldflags "-s -w -X main.version=ci" -o devinmonitor .
+
+      - name: Smoke test --help
+        run: ./devinmonitor --help
+
+      - name: Smoke test version
+        run: ./devinmonitor version
+
+  cross-compile:
+    name: Cross-compile (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+      - name: Build
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          ext=""
+          [ "$GOOS" = "windows" ] && ext=".exe"
+          go build -ldflags "-s -w -X main.version=ci" -o "devinmonitor-${GOOS}-${GOARCH}${ext}" .

@@ -1,0 +1,23 @@
+# Binaries
+/devinmonitor
+/devinmonitor.exe
+/dist/
+
+# Go workspace files
+go.work
+go.work.sum
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-*
+
+# Test artifacts
+/tmp/

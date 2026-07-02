@@ -1,0 +1,176 @@
+# 中文 locale for devinmonitor
+# 技术词（token, cost, ttft, sparkline）保留英文，避免"令牌""首字延迟"等别扭译法。
+
+[app]
+name = "DevinMonitor"
+tagline = "Devin CLI 的 Token 与成本监控"
+
+[cmd]
+sessions = "会话"
+session  = "会话详情"
+daily    = "按日"
+weekly   = "按周"
+monthly  = "按月"
+models   = "模型"
+model    = "模型详情"
+projects = "项目"
+metrics  = "Prometheus 指标"
+agents   = "子代理统计"
+live     = "实时"
+export   = "导出"
+version  = "版本"
+
+[common]
+id        = "ID"
+title     = "标题"
+model     = "模型"
+duration  = "时长"
+cost      = "成本"
+requests  = "请求"
+sessions  = "会话"
+tokens    = "Token"
+input     = "输入"
+output    = "输出"
+cacheRead = "缓存读"
+cacheWr   = "缓存写"
+total     = "合计"
+net       = "净计"
+date      = "日期"
+week      = "周"
+month     = "月"
+dateRange = "日期范围"
+project   = "项目"
+mode      = "模式"
+est       = "估算"
+free      = "免费"
+na        = "-"
+none      = "无"
+costPct   = "成本%"
+speed     = "速度"
+totals    = "合计"
+profile   = "配置"
+calls     = "调用"
+bg        = "后台"
+fg        = "前台"
+subAgents = "子代理"
+done      = "完成"
+waits     = "等待"
+avgDur    = "均时"
+maxDur    = "最长"
+avgTask   = "均任务"
+maxTask   = "最长任务"
+avgOut    = "均输出"
+maxOut    = "最长输出"
+
+[dash.header]
+project   = "项目"
+session   = "会话"
+updated   = "更新"
+mode      = "模式"
+model     = "模型"
+reqs      = "请求"
+
+[dash.tokens]
+title   = "Token"
+recent  = "最近一次"
+session = "会话累计"
+avgIn   = "均输入"
+avgOut  = "均输出"
+rate    = "速率"
+
+[dash.context]
+title    = "上下文"
+size     = "占用"
+window   = "窗口"
+growth   = "上下文增长"
+now      = "当前"
+avg      = "均值"
+peak     = "峰值"
+cacheHit = "缓存命中"
+perReq   = "每请求"
+estLeft  = "预估剩余"
+reqs     = "请求"
+remain   = "剩余"
+
+[dash.status]
+title     = "状态"
+costSess  = "本会话"
+costToday = "今日"
+quota     = "配额"
+time      = "时间"
+duration  = "时长"
+max       = "上限"
+avgReq    = "均请求"
+ttft      = "首字p50"
+totalP50  = "总时p50"
+tools     = "工具"
+
+[dash.stream]
+title   = "请求流"
+ttft    = "首字"
+rate    = "tok/s"
+elapsed = "耗时"
+reason  = "原因"
+p50     = "p50"
+p95     = "p95"
+trend   = "趋势"
+
+[dash.latency]
+title   = "延迟"
+ttft    = "TTFT"
+total   = "总时"
+toks    = "tok/s"
+finish  = "结束原因"
+stop    = "完成"
+tool    = "工具调用"
+length  = "截断"
+trunc   = "被截断"
+
+[dash.tools]
+title   = "工具"
+calls   = "次"
+tool    = "工具"
+
+[dash.model]
+detail    = "模型详情"
+firstUsed = "首次使用"
+lastUsed  = "最后使用"
+daysUsed  = "使用天数"
+avgDay    = "日均"
+avgSess   = "会话均"
+
+[dash.controls]
+quit    = "q 退出"
+switch  = "r 切换会话"
+jump    = "1-4 跳转区域"
+theme   = "t 切换主题"
+locale  = "L 切换语言"
+refresh = "自动刷新"
+
+[dash.tab]
+stream   = "请求流"
+context  = "上下文"
+latency  = "延迟"
+tools    = "工具"
+
+[dash.tiny]
+sep = "│"
+
+[err]
+noData        = "未找到会话数据"
+noDB          = "未找到 Devin sessions.db: {{.Path}}"
+schemaUnsup   = "不支持的 schema 版本 {{.Ver}}（需 <= {{.Max}}）"
+readFail      = "读取数据库失败: {{.Err}}"
+noTTY         = "实时面板需要 TTY（去掉 --live 用报表模式）"
+noSessions    = "数据库中无会话"
+exportFail    = "导出失败: {{.Err}}"
+
+[help]
+usage    = "用法"
+flags    = "参数"
+examples = "示例"
+dataDir  = "Devin 数据目录（默认自动探测）"
+locale   = "语言 en/zh（默认从系统探测）"
+breakdown= "显示每模型明细"
+startDay = "周起始日（monday..sunday）"
+interval = "实时刷新间隔（秒）"

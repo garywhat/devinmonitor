@@ -1,0 +1,176 @@
+# English locale for devinmonitor
+# Technical terms (token, cost, ttft, sparkline) kept in English across locales.
+
+[app]
+name = "DevinMonitor"
+tagline = "Token & cost monitor for Devin CLI"
+
+[cmd]
+sessions = "Sessions"
+session  = "Session detail"
+daily    = "Daily"
+weekly   = "Weekly"
+monthly  = "Monthly"
+models   = "Models"
+model    = "Model detail"
+projects = "Projects"
+metrics  = "Prometheus metrics"
+agents   = "Sub-agent usage"
+live     = "Live"
+export   = "Export"
+version  = "Version"
+
+[common]
+id        = "ID"
+title     = "Title"
+model     = "Model"
+duration  = "Duration"
+cost      = "Cost"
+requests  = "Reqs"
+sessions  = "Sessions"
+tokens    = "Tokens"
+input     = "Input"
+output    = "Output"
+cacheRead = "Cache R"
+cacheWr   = "Cache W"
+total     = "Total"
+net       = "Net"
+date      = "Date"
+week      = "Week"
+month     = "Month"
+dateRange = "Date Range"
+project   = "Project"
+mode      = "Mode"
+est       = "est"
+free      = "free"
+na        = "-"
+none      = "None"
+costPct   = "Cost%"
+speed     = "Speed"
+profile   = "Profile"
+totals    = "TOTALS"
+calls     = "Calls"
+bg        = "BG"
+fg        = "FG"
+subAgents = "Subs"
+done      = "Done"
+waits     = "Waits"
+avgDur    = "Avg Dur"
+maxDur    = "Max Dur"
+avgTask   = "Avg Task"
+maxTask   = "Max Task"
+avgOut    = "Avg Out"
+maxOut    = "Max Out"
+
+[dash.header]
+project   = "Project"
+session   = "Session"
+updated   = "Updated"
+mode      = "Mode"
+model     = "Model"
+reqs      = "Reqs"
+
+[dash.tokens]
+title   = "Tokens"
+recent  = "Recent"
+session = "Session Totals"
+avgIn   = "Avg In"
+avgOut  = "Avg Out"
+rate    = "Rate"
+
+[dash.context]
+title    = "Context"
+size     = "Size"
+window   = "Window"
+growth   = "Context Growth"
+now      = "now"
+avg      = "Avg"
+peak     = "Peak"
+cacheHit = "Cache Hit"
+perReq   = "Per Req"
+estLeft  = "Est. Left"
+reqs     = "reqs"
+remain   = "Remain"
+
+[dash.status]
+title     = "Status"
+costSess  = "Session"
+costToday = "Today"
+quota     = "Quota"
+time      = "Time"
+duration  = "Duration"
+max       = "Max"
+avgReq    = "Avg Req"
+ttft      = "TTFT p50"
+totalP50  = "Total p50"
+tools     = "Tools"
+
+[dash.stream]
+title   = "Request Stream"
+ttft    = "ttft"
+rate    = "tok/s"
+elapsed = "elapsed"
+reason  = "reason"
+p50     = "p50"
+p95     = "p95"
+trend   = "trend"
+
+[dash.latency]
+title   = "Latency"
+ttft    = "TTFT"
+total   = "Total"
+toks    = "tok/s"
+finish  = "Finish Reason"
+stop    = "stop"
+tool    = "tool_calls"
+length  = "length"
+trunc   = "truncated"
+
+[dash.tools]
+title   = "Tools"
+calls   = "calls"
+tool    = "Tool"
+
+[dash.model]
+detail    = "Model Detail"
+firstUsed = "First Used"
+lastUsed  = "Last Used"
+daysUsed  = "Days Used"
+avgDay    = "Avg/Day"
+avgSess   = "Avg/Session"
+
+[dash.controls]
+quit    = "q quit"
+switch  = "r switch session"
+jump    = "1-4 jump section"
+theme   = "t toggle theme"
+locale  = "L toggle locale"
+refresh = "auto-refresh"
+
+[dash.tab]
+stream   = "Stream"
+context  = "Context"
+latency  = "Latency"
+tools    = "Tools"
+
+[dash.tiny]
+sep = "|"
+
+[err]
+noData        = "No session data found"
+noDB          = "Devin sessions.db not found at: {{.Path}}"
+schemaUnsup   = "Unsupported schema version {{.Ver}} (expected <= {{.Max}})"
+readFail      = "Failed to read database: {{.Err}}"
+noTTY         = "Live dashboard requires a TTY (run without --live for reports)"
+noSessions    = "No sessions in database"
+exportFail    = "Export failed: {{.Err}}"
+
+[help]
+usage    = "Usage"
+flags    = "Flags"
+examples = "Examples"
+dataDir  = "Devin data directory (default: auto-detect)"
+locale   = "Locale (en/zh, default: auto-detect from system)"
+breakdown= "Show per-model breakdown"
+startDay = "Week start day (monday..sunday)"
+interval = "Live refresh interval in seconds"
