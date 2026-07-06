@@ -18,8 +18,13 @@ import (
 
 	"github.com/garywhat/devinmonitor/internal/cli"
 	"github.com/garywhat/devinmonitor/internal/i18n"
+	_ "github.com/garywhat/devinmonitor/internal/analytics"
+	_ "github.com/garywhat/devinmonitor/internal/budget"
+	_ "github.com/garywhat/devinmonitor/internal/filterexport"
 	_ "github.com/garywhat/devinmonitor/internal/integration"
 	_ "github.com/garywhat/devinmonitor/internal/project"
+	_ "github.com/garywhat/devinmonitor/internal/trends"
+	_ "github.com/garywhat/devinmonitor/internal/tuiext"
 )
 
 func init() {
