@@ -45,7 +45,20 @@ func printProjectsBasic(rows []report.ProjectRow) {
 	t := ui.NewTable(
 		"Project", "Sessions", "Reqs", "Input", "Output", "Total", "Cost", "Model",
 	).RightAlign(1, 2, 3, 4, 5)
+	var totSessions, totReqs int
+	var totInput, totOutput, totTotal int64
+	var totCost float64
+	totFree := true
 	for _, row := range rows {
+		totSessions += row.Sessions
+		totReqs += row.Requests
+		totInput += row.InputTok
+		totOutput += row.OutputTok
+		totTotal += row.InputTok + row.OutputTok + row.CacheRead + row.CacheWrite
+		totCost += row.Cost
+		if !row.IsFree {
+			totFree = false
+		}
 		t.Row(
 			row.Name,
 			fmt.Sprintf("%d", row.Sessions),
@@ -57,6 +70,14 @@ func printProjectsBasic(rows []report.ProjectRow) {
 			compactModels(row.Models),
 		)
 	}
+	t.TotalRow("TOTAL",
+		fmt.Sprintf("%d", totSessions),
+		fmt.Sprintf("%d", totReqs),
+		report.FormatTok(totInput),
+		report.FormatTok(totOutput),
+		report.FormatTok(totTotal),
+		report.FormatCost(totCost, totFree),
+		"")
 	fmt.Println(t.String())
 }
 
@@ -82,7 +103,7 @@ func printProjectAttribution(rows []report.ProjectRow) {
 			bar,
 		)
 	}
-	t.Row("TOTAL", "", fmt.Sprintf("$%.2f", totalCost), "100.0%", "")
+	t.TotalRow("TOTAL", "", fmt.Sprintf("$%.2f", totalCost), "100.0%", "")
 	fmt.Println(t.String())
 }
 
@@ -172,12 +193,18 @@ func printToolAttribution(ss []model.Session) {
 	sort.Slice(rows, func(i, j int) bool { return rows[i].calls > rows[j].calls })
 
 	t := ui.NewTable("Tool", "Calls", "Cost Share", "Tokens (est)").RightAlign(1, 2, 3)
+	var totTokens int64
 	for _, r := range rows {
+		totTokens += r.tokens
 		t.Row(r.tool,
 			fmt.Sprintf("%d", r.calls),
 			fmt.Sprintf("$%.4f", r.costShare),
 			report.FormatTok(r.tokens))
 	}
+	t.TotalRow("TOTAL",
+		fmt.Sprintf("%d", totalCalls),
+		fmt.Sprintf("$%.4f", totalCost),
+		report.FormatTok(totTokens))
 	fmt.Println(t.String())
 }
 
@@ -238,13 +265,23 @@ var cmdMCPUsage = func() *cobra.Command {
 			sort.Slice(rows, func(i, j int) bool { return rows[i].calls > rows[j].calls })
 
 			t := ui.NewTable("MCP Server", "Total Calls", "call_tool", "list_tools", "read_resource").RightAlign(1, 2, 3, 4)
+			var totCalls, totCallTool, totListTools, totReadResource int
 			for _, r := range rows {
+				totCalls += r.calls
+				totCallTool += r.byTool["mcp_call_tool"]
+				totListTools += r.byTool["mcp_list_tools"]
+				totReadResource += r.byTool["mcp_read_resource"]
 				t.Row(r.server,
 					fmt.Sprintf("%d", r.calls),
 					fmt.Sprintf("%d", r.byTool["mcp_call_tool"]),
 					fmt.Sprintf("%d", r.byTool["mcp_list_tools"]),
 					fmt.Sprintf("%d", r.byTool["mcp_read_resource"]))
 			}
+			t.TotalRow("TOTAL",
+				fmt.Sprintf("%d", totCalls),
+				fmt.Sprintf("%d", totCallTool),
+				fmt.Sprintf("%d", totListTools),
+				fmt.Sprintf("%d", totReadResource))
 			fmt.Println(t.String())
 		},
 	}
@@ -332,13 +369,16 @@ var cmdShellUsage = func() *cobra.Command {
 			sort.Slice(rows, func(i, j int) bool { return rows[i].calls > rows[j].calls })
 
 			t := ui.NewTable("Category", "Calls", "Commands").RightAlign(1)
+			var totCalls int
 			for _, r := range rows {
+				totCalls += r.calls
 				cmdList := strings.Join(r.commands, ", ")
 				if len(cmdList) > 50 {
 					cmdList = cmdList[:47] + "..."
 				}
 				t.Row(r.category, fmt.Sprintf("%d", r.calls), cmdList)
 			}
+			t.TotalRow("TOTAL", fmt.Sprintf("%d", totCalls), "")
 			fmt.Println(t.String())
 		},
 	}
@@ -488,7 +528,7 @@ var cmdActivities = func() *cobra.Command {
 				totalCost += r.cost
 				totalSessions += r.count
 			}
-			t.Row("TOTAL",
+			t.TotalRow("TOTAL",
 				fmt.Sprintf("%d", totalSessions),
 				fmt.Sprintf("$%.2f", totalCost), "")
 			fmt.Println(t.String())

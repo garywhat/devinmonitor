@@ -324,6 +324,8 @@ func cmdTopCost() *cobra.Command {
 			top := summary.TopN(limit)
 			t := ui.NewTable("#", "ID", "Title", "Model", "Requests", "Cost").
 				RightAlign(0, 4, 5)
+			var totReq int
+			var totCost float64
 			for i, row := range top {
 				costStr := report.FormatCost(row.Cost, false)
 				if row.Estimated && row.Cost > 0 {
@@ -337,7 +339,12 @@ func cmdTopCost() *cobra.Command {
 					fmt.Sprintf("%d", row.Requests),
 					costStr,
 				)
+				totReq += row.Requests
+				totCost += row.Cost
 			}
+			t.TotalRow("TOTAL", "", "", "",
+				fmt.Sprintf("%d", totReq),
+				report.FormatCost(totCost, false))
 			fmt.Println(t.String())
 		},
 	}

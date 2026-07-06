@@ -78,10 +78,10 @@ func cacheReport(stats model.CacheStats, ss []model.Session) string {
 	// Per-session breakdown (top 10).
 	if len(ss) > 0 {
 		type sessCache struct {
-			id      string
-			title   string
-			hitPct  float64
-			cacheR  int64
+			id     string
+			title  string
+			hitPct float64
+			cacheR int64
 		}
 		var rows []sessCache
 		for i := range ss {
@@ -198,7 +198,7 @@ func cmdTasks() *cobra.Command {
 				t.Row(c.Name, fmt.Sprintf("%d", c.Count), fmt.Sprintf("%.1f%%", pct),
 					report.FormatCost(c.Cost, false), report.FormatCost(cps, false))
 			}
-			t.Row("TOTAL", fmt.Sprintf("%d", total), "100.0%",
+			t.TotalRow("TOTAL", fmt.Sprintf("%d", total), "100.0%",
 				report.FormatCost(totalCost, false), report.FormatCost(totalCost/float64(total), false))
 			fmt.Println(t.String())
 		},
@@ -277,6 +277,7 @@ func cmdCompaction() *cobra.Command {
 			if len(summary.Events) < max {
 				max = len(summary.Events)
 			}
+			var totBefore, totAfter, totSaved int64
 			for i := 0; i < max; i++ {
 				e := summary.Events[i]
 				saved := e.BeforeTokens - e.AfterTokens
@@ -289,7 +290,15 @@ func cmdCompaction() *cobra.Command {
 					report.FormatTok(int64(e.AfterTokens)),
 					report.FormatTok(int64(saved)),
 					fmt.Sprintf("%.1f%%", dropPct))
+				totBefore += int64(e.BeforeTokens)
+				totAfter += int64(e.AfterTokens)
+				totSaved += int64(saved)
 			}
+			t.TotalRow("TOTAL", "",
+				report.FormatTok(totBefore),
+				report.FormatTok(totAfter),
+				report.FormatTok(totSaved),
+				"")
 			fmt.Println(t.String())
 		},
 	}
@@ -318,6 +327,9 @@ func cmdModelCompare() *cobra.Command {
 			t := ui.NewTable("Model", "Requests", "Input", "Output", "Cost",
 				"Avg Latency", "Tokens/sec", "Cache Hit%").
 				RightAlign(1, 2, 3, 4, 5, 6, 7)
+			var totReq int
+			var totIn, totOut int64
+			var totCost float64
 			for _, row := range cmp.Models {
 				t.Row(row.Name,
 					fmt.Sprintf("%d", row.Requests),
@@ -327,7 +339,17 @@ func cmdModelCompare() *cobra.Command {
 					fmt.Sprintf("%.1fms", row.AvgLatency),
 					fmt.Sprintf("%.0f", row.TokensPerSec),
 					fmt.Sprintf("%.1f%%", row.CacheHitPct))
+				totReq += row.Requests
+				totIn += row.InputTokens
+				totOut += row.OutputTokens
+				totCost += row.Cost
 			}
+			t.TotalRow("TOTAL",
+				fmt.Sprintf("%d", totReq),
+				report.FormatTok(totIn),
+				report.FormatTok(totOut),
+				report.FormatCost(totCost, false),
+				"", "", "")
 			fmt.Println(t.String())
 		},
 	}
@@ -368,8 +390,8 @@ func cmdYield() *cobra.Command {
 
 func yieldReport(ss []model.Session) {
 	type result struct {
-		session   model.Session
-		commits   int
+		session    model.Session
+		commits    int
 		lastCommit string
 	}
 	var results []result

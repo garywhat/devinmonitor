@@ -125,12 +125,13 @@ func truncateCJK(s string, maxDisplayWidth int) string {
 
 // TableBuilder builds a styled table with rounded borders and CJK-correct
 // column width calculation. Automatically fits to terminal width by
-// truncating the widest text columns first.
+// truncating the widest text columns first — only when the terminal is
+// too narrow. No truncation happens when there is enough space.
 type TableBuilder struct {
 	headers    []string
 	rows       [][]string
+	totalRow   []string
 	rightAlign []bool
-	maxWidths  []int
 	termWidth  int // 0 = auto-detect
 }
 
@@ -139,7 +140,6 @@ func NewTable(headers ...string) *TableBuilder {
 	return &TableBuilder{
 		headers:    headers,
 		rightAlign: make([]bool, len(headers)),
-		maxWidths:  make([]int, len(headers)),
 		termWidth:  terminalWidth(),
 	}
 }
@@ -154,22 +154,16 @@ func (t *TableBuilder) RightAlign(cols ...int) *TableBuilder {
 	return t
 }
 
-// MaxWidth sets a max width for a column (truncates with …).
-func (t *TableBuilder) MaxWidth(col, width int) *TableBuilder {
-	if col >= 0 && col < len(t.maxWidths) {
-		t.maxWidths[col] = width
-	}
+// Row adds a data row.
+func (t *TableBuilder) Row(values ...string) *TableBuilder {
+	t.rows = append(t.rows, values)
 	return t
 }
 
-// Row adds a data row.
-func (t *TableBuilder) Row(values ...string) *TableBuilder {
-	for i, v := range values {
-		if i < len(t.maxWidths) && t.maxWidths[i] > 0 {
-			values[i] = truncateCJK(v, t.maxWidths[i])
-		}
-	}
-	t.rows = append(t.rows, values)
+// TotalRow adds a totals row that is rendered with a separator line above it.
+// Use this for the summary/aggregate row at the bottom of a table.
+func (t *TableBuilder) TotalRow(values ...string) *TableBuilder {
+	t.totalRow = values
 	return t
 }
 
@@ -181,7 +175,7 @@ func (t *TableBuilder) String() string {
 		return ""
 	}
 
-	// Calculate column widths from headers and rows.
+	// Calculate column widths from headers, rows, and total row.
 	colWidths := make([]int, nCols)
 	for i, h := range t.headers {
 		colWidths[i] = strWidth(h)
@@ -193,11 +187,11 @@ func (t *TableBuilder) String() string {
 			}
 		}
 	}
-
-	// Apply explicit max widths.
-	for i, mw := range t.maxWidths {
-		if mw > 0 && colWidths[i] > mw {
-			colWidths[i] = mw
+	if t.totalRow != nil {
+		for i := 0; i < nCols && i < len(t.totalRow); i++ {
+			if w := strWidth(t.totalRow[i]); w > colWidths[i] {
+				colWidths[i] = w
+			}
 		}
 	}
 
@@ -207,8 +201,8 @@ func (t *TableBuilder) String() string {
 	for _, w := range colWidths {
 		totalWidth += w
 	}
-	totalWidth += nCols * 2   // " content " padding
-	totalWidth += nCols + 1   // borders
+	totalWidth += nCols * 2 // " content " padding
+	totalWidth += nCols + 1 // borders
 
 	termW := t.termWidth
 	if termW <= 0 {
@@ -267,6 +261,9 @@ func (t *TableBuilder) String() string {
 					row[c.idx] = truncateCJK(row[c.idx], colWidths[c.idx])
 				}
 			}
+			if c.idx < len(t.totalRow) {
+				t.totalRow[c.idx] = truncateCJK(t.totalRow[c.idx], colWidths[c.idx])
+			}
 		}
 		// Pass 2: truncate numeric columns down to 6 chars.
 		for _, c := range cols {
@@ -287,6 +284,9 @@ func (t *TableBuilder) String() string {
 				if c.idx < len(row) {
 					row[c.idx] = truncateCJK(row[c.idx], colWidths[c.idx])
 				}
+			}
+			if c.idx < len(t.totalRow) {
+				t.totalRow[c.idx] = truncateCJK(t.totalRow[c.idx], colWidths[c.idx])
 			}
 		}
 		// Pass 3: if still overflowing, aggressively truncate text to 4, numeric to 3.
@@ -312,6 +312,9 @@ func (t *TableBuilder) String() string {
 				if c.idx < len(row) {
 					row[c.idx] = truncateCJK(row[c.idx], colWidths[c.idx])
 				}
+			}
+			if c.idx < len(t.totalRow) {
+				t.totalRow[c.idx] = truncateCJK(t.totalRow[c.idx], colWidths[c.idx])
 			}
 		}
 	}
@@ -357,12 +360,10 @@ func (t *TableBuilder) String() string {
 	botBorder := buildHoriz(botLeft, teeUp, botRight)
 
 	// Build a row line.
-	// lipgloss.Render strips styling from pure-symbol strings like "│" and
-	// border lines, so we apply the ANSI color code manually for consistency.
 	borderColor := "\x1b[38;5;238m"
 	borderReset := "\x1b[0m"
 	borderVert := borderColor + vert + borderReset
-	buildRow := func(cells []string, isHeader bool) string {
+	buildRow := func(cells []string, style string) string {
 		var b strings.Builder
 		b.WriteString(borderVert)
 		for i := 0; i < nCols; i++ {
@@ -379,10 +380,9 @@ func (t *TableBuilder) String() string {
 			} else {
 				cell = padRight(cell, colWidths[i])
 			}
-			// Apply header styling with raw ANSI codes (not lipgloss.Render,
-			// which has CJK width issues that truncate double-width chars).
-			if isHeader {
-				cell = "\x1b[1;38;5;99m" + cell + "\x1b[0m"
+			// Apply styling with raw ANSI codes.
+			if style != "" {
+				cell = style + cell + "\x1b[0m"
 			}
 			b.WriteString(" " + cell + " ")
 			b.WriteString(borderVert)
@@ -394,17 +394,21 @@ func (t *TableBuilder) String() string {
 
 	out.WriteString(borderColor + topBorder + borderReset)
 	out.WriteString("\n")
-	out.WriteString(buildRow(t.headers, true))
+	out.WriteString(buildRow(t.headers, "\x1b[1;38;5;99m")) // header: bold purple
 	out.WriteString("\n")
 	out.WriteString(borderColor + midBorder + borderReset)
 	out.WriteString("\n")
-	for i, row := range t.rows {
-		out.WriteString(buildRow(row, false))
-		if i < len(t.rows)-1 {
-			out.WriteString("\n")
-		}
+	for _, row := range t.rows {
+		out.WriteString(buildRow(row, ""))
+		out.WriteString("\n")
 	}
-	out.WriteString("\n")
+	// Render totals row with a separator above it (bold).
+	if t.totalRow != nil {
+		out.WriteString(borderColor + midBorder + borderReset)
+		out.WriteString("\n")
+		out.WriteString(buildRow(t.totalRow, "\x1b[1m")) // bold
+		out.WriteString("\n")
+	}
 	out.WriteString(borderColor + botBorder + borderReset)
 
 	return out.String()

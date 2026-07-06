@@ -101,8 +101,8 @@ func main() {
 // For feature commands, Name is the cobra Use name used to look up
 // the factory from the cli registry.
 type cmdEntry struct {
-	Name string              // feature command name, "" for core
-	Cmd  *cobra.Command      // resolved cobra command
+	Name string         // feature command name, "" for core
+	Cmd  *cobra.Command // resolved cobra command
 }
 
 // buildOrderedCommands builds the full interleaved command list in
@@ -522,7 +522,7 @@ func printTimeRows(rows []report.TimeRow, breakdown bool, mode timeRowMode) {
 			totCost += row.Cost
 		}
 		// TOTALS row.
-		t.Row(i18n.T("common.totals"), "",
+		t.TotalRow("TOTAL", "",
 			fmt.Sprintf("%d", totSess), fmt.Sprintf("%d", totReq),
 			report.FormatTok(totIn), report.FormatTok(totOut),
 			report.FormatTok(totCR), report.FormatTok(totCW),
@@ -594,7 +594,7 @@ func printTimeRows(rows []report.TimeRow, breakdown bool, mode timeRowMode) {
 		totCost += row.Cost
 	}
 	// TOTALS row.
-	totalsValues := []string{i18n.T("common.totals")}
+	totalsValues := []string{"TOTAL"}
 	if hasDateRange {
 		totalsValues = append(totalsValues, "")
 	}
@@ -613,7 +613,7 @@ func printTimeRows(rows []report.TimeRow, breakdown bool, mode timeRowMode) {
 		report.FormatCost(totCost, false),
 		"",
 	)
-	t.Row(totalsValues...)
+	t.TotalRow(totalsValues...)
 	fmt.Println(t.String())
 }
 
@@ -679,6 +679,23 @@ func cmdModels() *cobra.Command {
 				os.Exit(1)
 			}
 			rows := report.BuildModelRows(ss)
+			// Accumulate totals across all models.
+			var totSess, totReq int
+			var totIn, totOut, totCR, totCW int64
+			var totCost float64
+			for _, row := range rows {
+				totSess += row.Sessions
+				totReq += row.Requests
+				totIn += row.InputTok
+				totOut += row.OutputTok
+				totCR += row.CacheRead
+				totCW += row.CacheWrite
+				cost := row.CreditCost + row.ACUCost
+				if cost == 0 {
+					cost = row.EstCost
+				}
+				totCost += cost
+			}
 			var t *ui.TableBuilder
 			if verbose {
 				// Full table with latency columns.
@@ -720,6 +737,19 @@ func cmdModels() *cobra.Command {
 						fmt.Sprintf("%.1f%%", row.TruncPct),
 					)
 				}
+				t.TotalRow(
+					"TOTAL",
+					fmt.Sprintf("%d", totSess),
+					fmt.Sprintf("%d", totReq),
+					report.FormatTok(totIn),
+					report.FormatTok(totOut),
+					report.FormatTok(totCR),
+					report.FormatTok(totCW),
+					report.FormatTok(totIn+totOut+totCR+totCW),
+					report.FormatCost(totCost, false),
+					"100.0%",
+					"", "", "", "",
+				)
 			} else {
 				// Compact table: core columns matching ocmonitor.
 				t = ui.NewTable(
@@ -754,6 +784,19 @@ func cmdModels() *cobra.Command {
 						fmt.Sprintf("%.0f t/s", row.TokPerSecP50),
 					)
 				}
+				t.TotalRow(
+					"TOTAL",
+					fmt.Sprintf("%d", totSess),
+					fmt.Sprintf("%d", totReq),
+					report.FormatTok(totIn),
+					report.FormatTok(totOut),
+					report.FormatTok(totCR),
+					report.FormatTok(totCW),
+					report.FormatTok(totIn+totOut+totCR+totCW),
+					report.FormatCost(totCost, false),
+					"100.0%",
+					"",
+				)
 			}
 			fmt.Println(t.String())
 		},
@@ -831,9 +874,12 @@ func cmdModel() *cobra.Command {
 					i18n.T("dash.tools.tool"),
 					i18n.T("dash.tools.calls"),
 				).RightAlign(1)
+				var totCalls int
 				for _, tr := range d.Tools {
 					t.Row(tr.Name, fmt.Sprintf("%d", tr.Calls))
+					totCalls += tr.Calls
 				}
+				t.TotalRow("TOTAL", fmt.Sprintf("%d", totCalls))
 				fmt.Println(t.String())
 			}
 		},
@@ -983,8 +1029,8 @@ func cmdAgents() *cobra.Command {
 			if totDone > 0 && totOut > 0 {
 				totAvgOut = fmt.Sprintf("%d", totOut/totDone)
 			}
-			t.Row(
-				i18n.T("common.totals"),
+			t.TotalRow(
+				"TOTAL",
 				fmt.Sprintf("%d", totCalls),
 				fmt.Sprintf("%d", totSess),
 				fmt.Sprintf("%d", totBG),

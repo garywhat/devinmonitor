@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -171,8 +172,6 @@ func cmdSearch() *cobra.Command {
 				return
 			}
 			t := ui.NewTable("Session", "Node", "Role", "Timestamp", "Snippet")
-			t.MaxWidth(0, 16)
-			t.MaxWidth(4, 60)
 			for _, sr := range results {
 				t.Row(sr.SessionID, fmt.Sprintf("%d", sr.NodeID), sr.Role,
 					sr.Timestamp.Format("2006-01-02 15:04"), sr.Snippet)
@@ -429,11 +428,12 @@ func renderSessionTable(ss []model.Session) {
 		return
 	}
 	t := ui.NewTable("ID", "Title", "Model", "Mode", "Project", "Requests", "Input", "Output", "Duration", "Cost")
-	t.MaxWidth(0, 16)
-	t.MaxWidth(1, 30)
-	t.MaxWidth(2, 22)
-	t.MaxWidth(4, 24)
 	t.RightAlign(5, 6, 7, 9)
+	var totReq int
+	var totIn, totOut int64
+	var totDur time.Duration
+	var totCost float64
+	anyEstimated := false
 	for _, row := range rows {
 		costStr := report.FormatCost(row.Cost, row.IsFree)
 		if row.CostEstimated {
@@ -445,7 +445,27 @@ func renderSessionTable(ss []model.Session) {
 			report.FormatTok(row.OutputTok),
 			report.FormatDur(row.Duration),
 			costStr)
+		totReq += row.Requests
+		totIn += row.InputTok
+		totOut += row.OutputTok
+		totDur += row.Duration
+		totCost += row.Cost
+		if row.CostEstimated {
+			anyEstimated = true
+		}
 	}
+	totCostStr := report.FormatCost(totCost, false)
+	if anyEstimated {
+		totCostStr += " est"
+	}
+	t.TotalRow(
+		"TOTAL", "", "", "", "",
+		fmt.Sprintf("%d", totReq),
+		report.FormatTok(totIn),
+		report.FormatTok(totOut),
+		report.FormatDur(totDur),
+		totCostStr,
+	)
 	fmt.Println(t.String())
 }
 

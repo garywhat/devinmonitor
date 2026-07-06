@@ -170,10 +170,9 @@ func RenderSparklineTable(ss []model.Session) string {
 		"ID", "Title", "Model", "Project",
 		"Reqs", "Cost", "Trend",
 	).RightAlign(4)
-	t.MaxWidth(1, 30)
-	t.MaxWidth(2, 24)
-	t.MaxWidth(3, 20)
 
+	var totReqs int
+	var totCost float64
 	for _, r := range rows {
 		s := byID[r.ID]
 		spark := ""
@@ -193,7 +192,15 @@ func RenderSparklineTable(ss []model.Session) string {
 			costStr,
 			spark,
 		)
+		totReqs += r.Requests
+		totCost += r.Cost
 	}
+	t.TotalRow(
+		"TOTAL", "", "", "",
+		fmt.Sprintf("%d", totReqs),
+		report.FormatCost(totCost, false),
+		"",
+	)
 	return t.String()
 }
 

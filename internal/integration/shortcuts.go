@@ -57,7 +57,7 @@ func printPeriodRows(rows []report.TimeRow, labelHeader string) {
 		totCR += row.CacheRead
 		totCost += row.Cost
 	}
-	t.Row(
+	t.TotalRow(
 		"TOTALS",
 		fmt.Sprintf("%d", totSess),
 		fmt.Sprintf("%d", totReq),
@@ -260,6 +260,9 @@ func buildSessionsTable(rows []report.SessionRow, verbose bool) *ui.TableBuilder
 			"Subs", "Reqs", "Input", "Output", "Cache R",
 			"Duration", "Cost",
 		).RightAlign(5, 6, 7, 8, 9, 10)
+		var totReq int
+		var totIn, totOut, totCR int64
+		var totCost float64
 		for _, row := range rows {
 			costStr := report.FormatCost(row.Cost, row.IsFree)
 			if row.CostEstimated && row.Cost > 0 {
@@ -276,11 +279,28 @@ func buildSessionsTable(rows []report.SessionRow, verbose bool) *ui.TableBuilder
 				report.FormatTok(row.CacheRead), report.FormatDur(row.Duration),
 				costStr,
 			)
+			totReq += row.Requests
+			totIn += row.InputTok
+			totOut += row.OutputTok
+			totCR += row.CacheRead
+			totCost += row.Cost
 		}
+		t.TotalRow(
+			"TOTALS", "", "", "", "", "",
+			fmt.Sprintf("%d", totReq),
+			report.FormatTok(totIn),
+			report.FormatTok(totOut),
+			report.FormatTok(totCR),
+			"",
+			report.FormatCost(totCost, false),
+		)
 	} else {
 		t = ui.NewTable(
 			"ID", "Title", "Model", "Project", "Reqs", "Input", "Cost",
 		).RightAlign(4, 5)
+		var totReq int
+		var totIn int64
+		var totCost float64
 		for _, row := range rows {
 			costStr := report.FormatCost(row.Cost, row.IsFree)
 			if row.CostEstimated && row.Cost > 0 {
@@ -291,7 +311,16 @@ func buildSessionsTable(rows []report.SessionRow, verbose bool) *ui.TableBuilder
 				fmt.Sprintf("%d", row.Requests),
 				report.FormatTok(row.InputTok), costStr,
 			)
+			totReq += row.Requests
+			totIn += row.InputTok
+			totCost += row.Cost
 		}
+		t.TotalRow(
+			"TOTALS", "", "", "",
+			fmt.Sprintf("%d", totReq),
+			report.FormatTok(totIn),
+			report.FormatCost(totCost, false),
+		)
 	}
 	return t
 }
@@ -417,7 +446,7 @@ func printDailyRows(rows []report.TimeRow, breakdown bool) {
 	if totSubs > 0 {
 		totSubsStr = fmt.Sprintf("%d", totSubs)
 	}
-	t.Row(
+	t.TotalRow(
 		"TOTALS",
 		fmt.Sprintf("%d", totSess),
 		totSubsStr,
