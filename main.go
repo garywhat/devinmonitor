@@ -129,7 +129,6 @@ func buildOrderedCommands() []cmdEntry {
 		// --- Sessions ---
 		core(cmdSession()),
 		feat("sessions"), feat("filter"), feat("search"),
-		feat("pin"), feat("unpin"),
 
 		// --- Time Reports ---
 		core(cmdWeekly()),

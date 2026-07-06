@@ -14,7 +14,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/garywhat/devinmonitor/internal/cli"
-	"github.com/garywhat/devinmonitor/internal/config"
 	"github.com/garywhat/devinmonitor/internal/export"
 	"github.com/garywhat/devinmonitor/internal/filter"
 	"github.com/garywhat/devinmonitor/internal/model"
@@ -35,8 +34,6 @@ type filteringReader interface {
 func init() {
 	cli.Register(cmdFilter)
 	cli.Register(cmdSearch)
-	cli.Register(cmdPin)
-	cli.Register(cmdUnpin)
 	cli.Register(cmdReport)
 	cli.Register(cmdStatus)
 	cli.Register(cmdBackup)
@@ -120,7 +117,6 @@ func cmdFilter() *cobra.Command {
 			if sortBy != "" {
 				filter.SortBy(ss, sortBy, true)
 			}
-			ss = filter.PinnedFirst(ss, config.Global().PinnedSessions)
 
 			if asJSON {
 				writeJSONSessionList(ss)
@@ -187,44 +183,6 @@ func cmdSearch() *cobra.Command {
 	c.Flags().Int("limit", 50, "max results")
 	c.Flags().Bool("json", false, "output as JSON")
 	return c
-}
-
-// ---- pin / unpin (#48) ----
-
-func cmdPin() *cobra.Command {
-	return &cobra.Command{
-		Use:   "pin <session-id>",
-		Short: "Pin a session to the top of list",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			id := args[0]
-			cfg := config.Global()
-			cfg.PinnedSessions = filter.AddPin(cfg.PinnedSessions, id)
-			if err := config.SaveGlobal(); err != nil {
-				fmt.Fprintf(os.Stderr, "save config: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Printf("Pinned %s\n", id)
-		},
-	}
-}
-
-func cmdUnpin() *cobra.Command {
-	return &cobra.Command{
-		Use:   "unpin <session-id>",
-		Short: "Unpin a session",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			id := args[0]
-			cfg := config.Global()
-			cfg.PinnedSessions = filter.RemovePin(cfg.PinnedSessions, id)
-			if err := config.SaveGlobal(); err != nil {
-				fmt.Fprintf(os.Stderr, "save config: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Printf("Unpinned %s\n", id)
-		},
-	}
 }
 
 // ---- report (#51) ----
@@ -476,17 +434,12 @@ func renderSessionTable(ss []model.Session) {
 	t.MaxWidth(2, 22)
 	t.MaxWidth(4, 24)
 	t.RightAlign(5, 6, 7, 9)
-	pinned := config.Global().PinnedSessions
 	for _, row := range rows {
-		title := row.Title
-		if filter.IsPinned(row.ID, pinned) {
-			title = "\u2605 " + title
-		}
 		costStr := report.FormatCost(row.Cost, row.IsFree)
 		if row.CostEstimated {
 			costStr += " est"
 		}
-		t.Row(row.ID, title, row.Model, row.Mode, row.Project,
+		t.Row(row.ID, row.Title, row.Model, row.Mode, row.Project,
 			fmt.Sprintf("%d", row.Requests),
 			report.FormatTok(row.InputTok),
 			report.FormatTok(row.OutputTok),

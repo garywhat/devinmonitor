@@ -56,9 +56,6 @@ type Config struct {
 	// Custom pricing overrides (per million tokens).
 	CustomPricing map[string]CustomPricing `json:"customPricing"`
 
-	// Pinned sessions (session IDs).
-	PinnedSessions []string `json:"pinnedSessions"`
-
 	// Saved flags (preferences persisted between runs).
 	SavedFlags map[string]string `json:"savedFlags"`
 }
