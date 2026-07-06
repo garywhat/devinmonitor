@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -16,106 +17,8 @@ import (
 )
 
 // ---- Period Shortcuts (#80) ----
-
-// cmdToday shows only today's usage.
-var cmdToday = func() *cobra.Command {
-	return &cobra.Command{
-		Use:   "today",
-		Short: "Show today's usage report",
-		Run: func(cmd *cobra.Command, args []string) {
-			r := openReader(cmd)
-			defer r.Close()
-			ss, err := r.Sessions()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "%v\n", err)
-				os.Exit(1)
-			}
-			todayStart := model.DayStart(time.Now())
-			var filtered []model.Session
-			for _, s := range ss {
-				if s.LastActivityAt.After(todayStart) || s.LastActivityAt.Equal(todayStart) {
-					filtered = append(filtered, s)
-				}
-			}
-			rows := report.BuildDaily(filtered)
-			printPeriodRows(rows, "Date")
-		},
-	}
-}
-
-// cmdWeek shows the current week's usage.
-var cmdWeek = func() *cobra.Command {
-	return &cobra.Command{
-		Use:   "week",
-		Short: "Show this week's usage report",
-		Run: func(cmd *cobra.Command, args []string) {
-			r := openReader(cmd)
-			defer r.Close()
-			ss, err := r.Sessions()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "%v\n", err)
-				os.Exit(1)
-			}
-			now := time.Now()
-			todayStart := model.DayStart(now)
-			weekStart := todayStart.AddDate(0, 0, -int(now.Weekday()))
-			var filtered []model.Session
-			for _, s := range ss {
-				if s.LastActivityAt.After(weekStart) || s.LastActivityAt.Equal(weekStart) {
-					filtered = append(filtered, s)
-				}
-			}
-			rows := report.BuildWeekly(filtered, time.Sunday)
-			printPeriodRows(rows, "Week")
-		},
-	}
-}
-
-// cmdMonth shows the current month's usage.
-var cmdMonth = func() *cobra.Command {
-	return &cobra.Command{
-		Use:   "month",
-		Short: "Show this month's usage report",
-		Run: func(cmd *cobra.Command, args []string) {
-			r := openReader(cmd)
-			defer r.Close()
-			ss, err := r.Sessions()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "%v\n", err)
-				os.Exit(1)
-			}
-			now := time.Now()
-			monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-			var filtered []model.Session
-			for _, s := range ss {
-				if s.LastActivityAt.After(monthStart) || s.LastActivityAt.Equal(monthStart) {
-					filtered = append(filtered, s)
-				}
-			}
-			rows := report.BuildMonthly(filtered)
-			printPeriodRows(rows, "Month")
-		},
-	}
-}
-
-// cmdAll shows all-time usage summary.
-var cmdAll = func() *cobra.Command {
-	return &cobra.Command{
-		Use:   "all",
-		Short: "Show all-time usage report",
-		Run: func(cmd *cobra.Command, args []string) {
-			r := openReader(cmd)
-			defer r.Close()
-			ss, err := r.Sessions()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "%v\n", err)
-				os.Exit(1)
-			}
-			rows := report.BuildMonthly(ss)
-			printPeriodRows(rows, "Month")
-		},
-	}
-}
+// today/all/week/month removed as separate commands.
+// daily --today, monthly --all, weekly/monthly cover these use cases.
 
 // printPeriodRows prints time rows in a compact table.
 func printPeriodRows(rows []report.TimeRow, labelHeader string) {
@@ -234,15 +137,15 @@ var cmdAlias = func() *cobra.Command {
 	return c
 }
 
-// ---- Enhanced Sessions (#89 save flags, #87 watch) ----
+// ---- Enhanced Sessions (#89 save flags, #87 watch, #82 json) ----
 
 var cmdSessionsEnhanced = func() *cobra.Command {
-	var verbose, watch bool
+	var verbose, watch, jsonOut bool
 	var sortKey string
 	var save bool
 	c := &cobra.Command{
 		Use:   "sessions",
-		Short: "List sessions (with --sort, --save, --watch)",
+		Short: "List sessions (with --sort, --save, --watch, --json)",
 		Run: func(cmd *cobra.Command, args []string) {
 			// Apply saved sort if no explicit --sort.
 			cfg := config.Global()
@@ -270,6 +173,39 @@ var cmdSessionsEnhanced = func() *cobra.Command {
 				}
 				rows := report.BuildSessionRows(ss)
 				sortSessionRows(rows, sortKey)
+
+				if jsonOut {
+					// JSON output with active/completed status (replaces ls --json).
+					now := time.Now()
+					activeIDs := map[string]bool{}
+					for _, s := range ss {
+						if now.Sub(s.LastActivityAt) < 5*time.Minute {
+							activeIDs[s.ID] = true
+						}
+					}
+					items := make([]model.SessionListItem, 0, len(rows))
+					for _, row := range rows {
+						status := "completed"
+						if activeIDs[row.ID] {
+							status = "active"
+						}
+						items = append(items, model.SessionListItem{
+							ID:       row.ID,
+							Title:    row.Title,
+							Model:    row.Model,
+							Project:  row.Project,
+							Cost:     row.Cost,
+							Tokens:   row.InputTok + row.OutputTok,
+							Duration: report.FormatDur(row.Duration),
+							Status:   status,
+						})
+					}
+					enc := json.NewEncoder(os.Stdout)
+					enc.SetIndent("", "  ")
+					_ = enc.Encode(items)
+					return nil
+				}
+
 				t := buildSessionsTable(rows, verbose)
 				fmt.Println(t.String())
 				return nil
@@ -292,6 +228,7 @@ var cmdSessionsEnhanced = func() *cobra.Command {
 	}
 	c.Flags().BoolVar(&verbose, "verbose", false, "show all columns")
 	c.Flags().BoolVar(&watch, "watch", false, "auto-refresh (live updating)")
+	c.Flags().BoolVar(&jsonOut, "json", false, "output as JSON (with active/completed status)")
 	c.Flags().StringVar(&sortKey, "sort", "", "sort by: cost, tokens, requests, recent")
 	c.Flags().BoolVar(&save, "save", false, "save current flags as default")
 	c.Flags().Int("interval", 3, "refresh interval in seconds (for --watch)")
@@ -359,13 +296,13 @@ func buildSessionsTable(rows []report.SessionRow, verbose bool) *ui.TableBuilder
 	return t
 }
 
-// ---- Enhanced Daily (#87 watch) ----
+// ---- Enhanced Daily (#87 watch, #80 today shortcut) ----
 
 var cmdDailyEnhanced = func() *cobra.Command {
-	var breakdown, watch bool
+	var breakdown, watch, today bool
 	c := &cobra.Command{
 		Use:   "daily",
-		Short: "Daily usage report (with --watch)",
+		Short: "Daily usage report (with --watch, --today)",
 		Run: func(cmd *cobra.Command, args []string) {
 			render := func() error {
 				r := openReader(cmd)
@@ -373,6 +310,16 @@ var cmdDailyEnhanced = func() *cobra.Command {
 				ss, err := r.Sessions()
 				if err != nil {
 					return err
+				}
+				if today {
+					todayStart := model.DayStart(time.Now())
+					var filtered []model.Session
+					for _, s := range ss {
+						if s.LastActivityAt.After(todayStart) || s.LastActivityAt.Equal(todayStart) {
+							filtered = append(filtered, s)
+						}
+					}
+					ss = filtered
 				}
 				rows := report.BuildDaily(ss)
 				printDailyRows(rows, breakdown)
@@ -396,6 +343,7 @@ var cmdDailyEnhanced = func() *cobra.Command {
 	}
 	c.Flags().BoolVar(&breakdown, "breakdown", false, "show per-model breakdown")
 	c.Flags().BoolVar(&watch, "watch", false, "auto-refresh every N seconds")
+	c.Flags().BoolVar(&today, "today", false, "show only today's data")
 	c.Flags().Int("interval", 3, "refresh interval in seconds (for --watch)")
 	return c
 }

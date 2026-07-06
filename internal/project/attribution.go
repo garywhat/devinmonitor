@@ -185,7 +185,7 @@ func printToolAttribution(ss []model.Session) {
 
 var cmdMCPUsage = func() *cobra.Command {
 	return &cobra.Command{
-		Use:   "mcp-usage",
+		Use:   "mcp-stats",
 		Short: "Break down usage by MCP server (mcp_call_tool, mcp_list_tools, mcp_read_resource)",
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)

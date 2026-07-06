@@ -100,23 +100,16 @@ func computeCostSummary(ss []model.Session) costSummary {
 }
 
 func init() {
-	cli.Register(cmdToday)
-	// cmdWeek and cmdMonth removed — they are now aliases in main.go
-	// pointing to the existing "weekly" and "monthly" commands.
-	cli.Register(cmdAll)
+	// today/all/ls/whoami removed — merged into daily --today, monthly --all,
+	// sessions --json, config show respectively.
 	cli.Register(cmdSnapshot)
-	cli.Register(cmdLs)
-	cli.Register(cmdWhoami)
 	cli.Register(cmdAlerts)
 	cli.Register(cmdMCP)
 	cli.Register(cmdWeb)
 	cli.Register(cmdNotify)
 	cli.Register(cmdAlias)
-	cli.Register(cmdModelAlias)
 	cli.Register(cmdPricing)
-	cli.Register(cmdConfig)
-	cli.Register(cmdConfigTimezone)
-	cli.Register(cmdConfigResetHour)
+	cli.Register(cmdConfig) // includes timezone, reset-hour, model-alias subcommands
 	cli.Register(cmdWarehouse)
 	cli.Register(cmdSessionsEnhanced)
 	cli.Register(cmdDailyEnhanced)

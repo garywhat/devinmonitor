@@ -20,51 +20,75 @@ import (
 
 var cmdConfig = func() *cobra.Command {
 	c := &cobra.Command{
-		Use:   "config [show|set <key> <value>|reset]",
+		Use:   "config",
 		Short: "View and edit devinmonitor configuration",
+		// Default action when no subcommand: show config.
 		Run: func(cmd *cobra.Command, args []string) {
-			cfg := config.Global()
-			if len(args) == 0 || args[0] == "show" {
-				showConfig(cfg)
-				return
-			}
-			switch args[0] {
-			case "set":
-				if len(args) < 3 {
-					fmt.Fprintln(os.Stderr, "usage: config set <key> <value>")
-					os.Exit(1)
-				}
-				if err := setConfigKey(cfg, args[1], args[2]); err != nil {
-					fmt.Fprintf(os.Stderr, "%v\n", err)
-					os.Exit(1)
-				}
-				if err := config.SaveGlobal(); err != nil {
-					fmt.Fprintf(os.Stderr, "save: %v\n", err)
-					os.Exit(1)
-				}
-				fmt.Printf("Set %s = %s\n", args[1], args[2])
-			case "reset":
-				*cfg = config.Config{}
-				cfg.Theme = "auto"
-				cfg.ColorScheme = "auto"
-				cfg.Locale = "en"
-				cfg.TimeFormat = "auto"
-				cfg.Timezone = "auto"
-				cfg.RefreshInterval = 3
-				cfg.RefreshHz = 1.0
-				cfg.Currency = "USD"
-				cfg.Plan = "none"
-				if err := config.SaveGlobal(); err != nil {
-					fmt.Fprintf(os.Stderr, "save: %v\n", err)
-					os.Exit(1)
-				}
-				fmt.Println("Configuration reset to defaults.")
-			default:
-				fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n", args[0])
-				os.Exit(1)
-			}
+			showConfig(config.Global())
 		},
 	}
+
+	// Subcommand: config show
+	c.AddCommand(&cobra.Command{
+		Use:   "show",
+		Short: "Show current configuration (JSON)",
+		Run: func(cmd *cobra.Command, args []string) {
+			showConfig(config.Global())
+		},
+	})
+
+	// Subcommand: config set <key> <value>
+	c.AddCommand(&cobra.Command{
+		Use:   "set <key> <value>",
+		Short: "Set a configuration key",
+		Args:  cobra.ExactArgs(2),
+		Run: func(cmd *cobra.Command, args []string) {
+			cfg := config.Global()
+			if err := setConfigKey(cfg, args[0], args[1]); err != nil {
+				fmt.Fprintf(os.Stderr, "%v\n", err)
+				os.Exit(1)
+			}
+			if err := config.SaveGlobal(); err != nil {
+				fmt.Fprintf(os.Stderr, "save: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Set %s = %s\n", args[0], args[1])
+		},
+	})
+
+	// Subcommand: config reset
+	c.AddCommand(&cobra.Command{
+		Use:   "reset",
+		Short: "Reset configuration to defaults",
+		Run: func(cmd *cobra.Command, args []string) {
+			cfg := config.Global()
+			*cfg = config.Config{}
+			cfg.Theme = "auto"
+			cfg.ColorScheme = "auto"
+			cfg.Locale = "en"
+			cfg.TimeFormat = "auto"
+			cfg.Timezone = "auto"
+			cfg.RefreshInterval = 3
+			cfg.RefreshHz = 1.0
+			cfg.Currency = "USD"
+			cfg.Plan = "none"
+			if err := config.SaveGlobal(); err != nil {
+				fmt.Fprintf(os.Stderr, "save: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("Configuration reset to defaults.")
+		},
+	})
+
+	// Subcommand: config timezone [show|set <tz>|auto]
+	c.AddCommand(cmdConfigTimezoneSub)
+
+	// Subcommand: config reset-hour <hour>
+	c.AddCommand(cmdConfigResetHourSub)
+
+	// Subcommand: config model-alias [list|add <alias> <canonical>|remove <alias>]
+	c.AddCommand(cmdModelAliasSub)
+
 	return c
 }
 
@@ -145,11 +169,11 @@ func setConfigKey(cfg *config.Config, key, val string) error {
 	return nil
 }
 
-// ---- Timezone (#92) ----
+// ---- Timezone subcommand (#92) ----
 
-var cmdConfigTimezone = func() *cobra.Command {
+var cmdConfigTimezoneSub = func() *cobra.Command {
 	c := &cobra.Command{
-		Use:   "config-timezone [show|set <tz>|auto]",
+		Use:   "timezone [show|set <tz>|auto]",
 		Short: "Manage timezone for daily reset boundaries",
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.Global()
@@ -182,7 +206,7 @@ var cmdConfigTimezone = func() *cobra.Command {
 		},
 	}
 	return c
-}
+}()
 
 // detectTimezone auto-detects the system timezone.
 func detectTimezone() string {
@@ -199,11 +223,11 @@ func detectTimezone() string {
 	return "UTC"
 }
 
-// ---- Reset Hour (#93) ----
+// ---- Reset Hour subcommand (#93) ----
 
-var cmdConfigResetHour = func() *cobra.Command {
+var cmdConfigResetHourSub = func() *cobra.Command {
 	c := &cobra.Command{
-		Use:   "config-reset-hour <hour>",
+		Use:   "reset-hour <hour>",
 		Short: "Set custom daily reset hour (0-23)",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -222,11 +246,11 @@ var cmdConfigResetHour = func() *cobra.Command {
 		},
 	}
 	return c
-}
+}()
 
-// ---- Model Aliases (#90) ----
+// ---- Model Aliases subcommand (#90) ----
 
-var cmdModelAlias = func() *cobra.Command {
+var cmdModelAliasSub = func() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "model-alias [list|add <alias> <canonical>|remove <alias>]",
 		Short: "Manage model name aliases for pricing lookup",
@@ -253,7 +277,7 @@ var cmdModelAlias = func() *cobra.Command {
 			switch args[0] {
 			case "add":
 				if len(args) < 3 {
-					fmt.Fprintln(os.Stderr, "usage: model-alias add <alias> <canonical>")
+					fmt.Fprintln(os.Stderr, "usage: config model-alias add <alias> <canonical>")
 					os.Exit(1)
 				}
 				if cfg.ModelAliases == nil {
@@ -264,7 +288,7 @@ var cmdModelAlias = func() *cobra.Command {
 				fmt.Printf("Model alias added: %s -> %s\n", args[1], args[2])
 			case "remove":
 				if len(args) < 2 {
-					fmt.Fprintln(os.Stderr, "usage: model-alias remove <alias>")
+					fmt.Fprintln(os.Stderr, "usage: config model-alias remove <alias>")
 					os.Exit(1)
 				}
 				delete(cfg.ModelAliases, args[1])
@@ -277,7 +301,7 @@ var cmdModelAlias = func() *cobra.Command {
 		},
 	}
 	return c
-}
+}()
 
 // ---- Custom Pricing (#91) ----
 

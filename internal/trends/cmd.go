@@ -227,7 +227,7 @@ func parsePeriod(s string) (time.Time, time.Time, error) {
 
 func cmdToday24h() *cobra.Command {
 	return &cobra.Command{
-		Use:   "today-24h",
+		Use:   "24h",
 		Short: "Show activity over the last 24 hours (hourly chart)",
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)

@@ -128,13 +128,14 @@ func buildOrderedCommands() []cmdEntry {
 
 		// --- Sessions ---
 		core(cmdSession()),
-		feat("sessions"), feat("ls"), feat("filter"), feat("search"),
+		feat("sessions"), feat("filter"), feat("search"),
 		feat("pin"), feat("unpin"),
 
 		// --- Time Reports ---
 		core(cmdWeekly()),
 		core(cmdMonthly()),
-		feat("daily"), feat("today"), feat("all"), feat("today-24h"),
+		feat("daily"),
+		feat("24h"),
 
 		// --- Cost & Budget ---
 		feat("cost"), feat("budget"), feat("burn-rate"), feat("projection"),
@@ -150,7 +151,7 @@ func buildOrderedCommands() []cmdEntry {
 
 		// --- Projects & Tools ---
 		feat("projects"), feat("project"), feat("tools"),
-		feat("mcp-usage"), feat("shell-usage"), feat("activities"), feat("git"),
+		feat("mcp-stats"), feat("shell-usage"), feat("activities"), feat("git"),
 
 		// --- Models ---
 		core(cmdModels()),
@@ -162,11 +163,10 @@ func buildOrderedCommands() []cmdEntry {
 
 		// --- Integration ---
 		feat("mcp"), feat("web"), feat("notify"),
-		feat("snapshot"), feat("alerts"), feat("whoami"),
+		feat("snapshot"), feat("alerts"),
 
 		// --- Config ---
-		feat("config"), feat("config-timezone"), feat("config-reset-hour"),
-		feat("alias"), feat("model-alias"), feat("pricing"), feat("warehouse"),
+		feat("config"), feat("alias"), feat("pricing"), feat("warehouse"),
 
 		// --- System ---
 		core(cmdMetrics()),
