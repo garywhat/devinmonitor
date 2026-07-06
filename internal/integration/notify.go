@@ -128,25 +128,44 @@ func slackColor(level string) string {
 func sendDesktopNotification(n model.Notification) error {
 	switch runtime.GOOS {
 	case "windows":
-		// Windows toast via msg.exe (falls back to powershell).
-		cmd := exec.Command("msg", "*", "/TIME:30", fmt.Sprintf("%s: %s", n.Title, n.Body))
-		if err := cmd.Run(); err != nil {
-			// Fallback: powershell toast.
-			psScript := fmt.Sprintf(
-				`[System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms"); $notify = New-Object System.Windows.Forms.NotifyIcon; $notify.Icon = [System.Drawing.SystemIcons]::Information; $notify.BalloonTipTitle = '%s'; $notify.BalloonTipText = '%s'; $notify.Visible = $true; $notify.ShowBalloonTip(5000)`,
-				n.Title, n.Body)
-			cmd2 := exec.Command("powershell", "-Command", psScript)
-			return cmd2.Run()
-		}
-		return nil
+		// Use Windows Toast Notification via WinRT (goes to Action Center).
+		// Requires Windows 10+ and PowerShell 5.0+.
+		psScript := fmt.Sprintf(`
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime] | Out-Null
+$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+$textNodes = $template.GetElementsByTagName("text")
+$textNodes.Item(0).AppendChild($template.CreateTextNode("%s")) | Out-Null
+$textNodes.Item(1).AppendChild($template.CreateTextNode("%s")) | Out-Null
+$notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("DevinMonitor")
+$toast = [Windows.UI.Notifications.ToastNotification]::new($template)
+$notifier.Show($toast)
+`, escapeXML(n.Title), escapeXML(n.Body))
+		cmd := exec.Command("powershell", "-NoProfile", "-Command", psScript)
+		return cmd.Run()
 	case "darwin":
 		script := fmt.Sprintf(`display notification %q with title %q`, n.Body, n.Title)
 		cmd := exec.Command("osascript", "-e", script)
 		return cmd.Run()
 	default: // linux, freebsd, etc.
 		cmd := exec.Command("notify-send", n.Title, n.Body)
-		return cmd.Run()
+		if err := cmd.Run(); err != nil {
+			// notify-send not installed; try with explicit icon.
+			cmd2 := exec.Command("notify-send", "--icon=dialog-information", n.Title, n.Body)
+			return cmd2.Run()
+		}
+		return nil
 	}
+}
+
+// escapeXML escapes XML special characters for safe embedding in toast XML.
+func escapeXML(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, "'", "&apos;")
+	s = strings.ReplaceAll(s, "\"", "&quot;")
+	return s
 }
 
 // ---- Notify Command ----
