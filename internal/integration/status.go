@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/garywhat/devinmonitor/internal/config"
+	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/report"
 	"github.com/garywhat/devinmonitor/internal/ui"
@@ -19,7 +20,7 @@ import (
 var cmdSnapshot = func() *cobra.Command {
 	return &cobra.Command{
 		Use:   "snapshot",
-		Short: "Show current snapshot: active sessions, costs, ACU remaining",
+		Short: i18n.T("cmd.snapshot"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
@@ -176,7 +177,7 @@ var cmdAlerts = func() *cobra.Command {
 	var jsonOut bool
 	c := &cobra.Command{
 		Use:   "alerts",
-		Short: "Show alerts (for agent consumption with --json)",
+		Short: i18n.T("cmd.alerts"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()

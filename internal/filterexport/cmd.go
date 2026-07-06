@@ -17,6 +17,7 @@ import (
 	"github.com/garywhat/devinmonitor/internal/cli"
 	"github.com/garywhat/devinmonitor/internal/export"
 	"github.com/garywhat/devinmonitor/internal/filter"
+	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/reader"
 	"github.com/garywhat/devinmonitor/internal/report"
@@ -62,7 +63,7 @@ func asFiltering(r reader.Reader) (filteringReader, bool) {
 func cmdFilter() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "filter",
-		Short: "Filter sessions by model, project, mode, date, with sorting",
+		Short: i18n.T("cmd.filter"),
 		Run: func(cmd *cobra.Command, args []string) {
 			modelName, _ := cmd.Flags().GetString("model")
 			project, _ := cmd.Flags().GetString("project")
@@ -142,7 +143,7 @@ func cmdFilter() *cobra.Command {
 func cmdSearch() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "search <query>",
-		Short: "Full-text search across all session messages",
+		Short: i18n.T("cmd.search"),
 		Args:  cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			limit, _ := cmd.Flags().GetInt("limit")
@@ -171,7 +172,7 @@ func cmdSearch() *cobra.Command {
 				fmt.Println("No matches.")
 				return
 			}
-			t := ui.NewTable("Session", "Node", "Role", "Timestamp", "Snippet")
+			t := ui.NewTable(i18n.T("common.session"), i18n.T("common.node"), i18n.T("common.role"), i18n.T("common.timestamp"), i18n.T("common.snippet"))
 			for _, sr := range results {
 				t.Row(sr.SessionID, fmt.Sprintf("%d", sr.NodeID), sr.Role,
 					sr.Timestamp.Format("2006-01-02 15:04"), sr.Snippet)
@@ -189,7 +190,7 @@ func cmdSearch() *cobra.Command {
 func cmdReport() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "report",
-		Short: "Shareable usage report (text or SVG)",
+		Short: i18n.T("cmd.report"),
 		Run: func(cmd *cobra.Command, args []string) {
 			days, _ := cmd.Flags().GetInt("days")
 			month, _ := cmd.Flags().GetBool("month")
@@ -243,7 +244,7 @@ func cmdReport() *cobra.Command {
 func cmdStatus() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "status",
-		Short: "Usage status (compact, shell, state file, terminal title)",
+		Short: i18n.T("cmd.status"),
 		Run: func(cmd *cobra.Command, args []string) {
 			compact, _ := cmd.Flags().GetBool("compact")
 			shell, _ := cmd.Flags().GetBool("shell")
@@ -300,7 +301,7 @@ func cmdStatus() *cobra.Command {
 func cmdBackup() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "backup",
-		Short: "Backup all data (normalized JSON or raw DB copy)",
+		Short: i18n.T("cmd.backup"),
 		Run: func(cmd *cobra.Command, args []string) {
 			output, _ := cmd.Flags().GetString("output")
 			asDB, _ := cmd.Flags().GetBool("db")
@@ -355,7 +356,7 @@ func cmdBackup() *cobra.Command {
 func cmdExport() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "export",
-		Short: "Export sessions as CSV, markdown, HTML, or JSON",
+		Short: i18n.T("cmd.export"),
 		Run: func(cmd *cobra.Command, args []string) {
 			format, _ := cmd.Flags().GetString("format")
 			output, _ := cmd.Flags().GetString("output")
@@ -427,7 +428,7 @@ func renderSessionTable(ss []model.Session) {
 		fmt.Println("No sessions match.")
 		return
 	}
-	t := ui.NewTable("ID", "Title", "Model", "Mode", "Project", "Requests", "Input", "Output", "Duration", "Cost")
+	t := ui.NewTable(i18n.T("common.id"), i18n.T("common.title"), i18n.T("common.model"), i18n.T("common.mode"), i18n.T("common.project"), i18n.T("common.requests"), i18n.T("common.input"), i18n.T("common.output"), i18n.T("common.duration"), i18n.T("common.cost"))
 	t.RightAlign(5, 6, 7, 9)
 	var totReq int
 	var totIn, totOut int64
@@ -459,7 +460,7 @@ func renderSessionTable(ss []model.Session) {
 		totCostStr += " est"
 	}
 	t.TotalRow(
-		"TOTAL", "", "", "", "",
+		i18n.T("common.totals"), "", "", "", "",
 		fmt.Sprintf("%d", totReq),
 		report.FormatTok(totIn),
 		report.FormatTok(totOut),

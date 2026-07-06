@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/garywhat/devinmonitor/internal/cli"
+	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/reader"
 	"github.com/garywhat/devinmonitor/internal/report"
@@ -49,7 +50,7 @@ func openReader(cmd *cobra.Command) reader.Reader {
 func cmdCache() *cobra.Command {
 	return &cobra.Command{
 		Use:   "cache",
-		Short: "Show cache hit ratio, efficiency donut, savings, and leverage",
+		Short: i18n.T("cmd.cache"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
@@ -117,7 +118,7 @@ func cacheReport(stats model.CacheStats, ss []model.Session) string {
 func cmdEfficiency() *cobra.Command {
 	return &cobra.Command{
 		Use:   "efficiency",
-		Short: "Show token efficiency score, output verbosity, one-shot rate, and productivity",
+		Short: i18n.T("cmd.efficiency"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
@@ -164,7 +165,7 @@ func cmdEfficiency() *cobra.Command {
 func cmdTasks() *cobra.Command {
 	return &cobra.Command{
 		Use:   "tasks",
-		Short: "Show task category breakdown (Coding, Debugging, Testing, etc.)",
+		Short: i18n.T("cmd.tasks"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
@@ -184,7 +185,7 @@ func cmdTasks() *cobra.Command {
 				total += c.Count
 				totalCost += c.Cost
 			}
-			t := ui.NewTable("Category", "Sessions", "%", "Cost", "Cost/Session").
+			t := ui.NewTable(i18n.T("common.category"), i18n.T("common.sessions"), "%", i18n.T("common.cost"), i18n.T("common.costPerSession")).
 				RightAlign(1, 2, 3, 4)
 			for _, c := range cats {
 				pct := 0.0
@@ -198,7 +199,7 @@ func cmdTasks() *cobra.Command {
 				t.Row(c.Name, fmt.Sprintf("%d", c.Count), fmt.Sprintf("%.1f%%", pct),
 					report.FormatCost(c.Cost, false), report.FormatCost(cps, false))
 			}
-			t.TotalRow("TOTAL", fmt.Sprintf("%d", total), "100.0%",
+			t.TotalRow(i18n.T("common.totals"), fmt.Sprintf("%d", total), "100.0%",
 				report.FormatCost(totalCost, false), report.FormatCost(totalCost/float64(total), false))
 			fmt.Println(t.String())
 		},
@@ -211,7 +212,7 @@ func cmdOptimize() *cobra.Command {
 	var days int
 	c := &cobra.Command{
 		Use:   "optimize",
-		Short: "Scan for waste patterns and generate optimization suggestions",
+		Short: i18n.T("cmd.optimize"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
@@ -253,7 +254,7 @@ func cmdOptimize() *cobra.Command {
 func cmdCompaction() *cobra.Command {
 	return &cobra.Command{
 		Use:   "compaction",
-		Short: "Detect context compaction events from token count drops",
+		Short: i18n.T("cmd.compaction"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
@@ -271,7 +272,7 @@ func cmdCompaction() *cobra.Command {
 			fmt.Printf("Total Tokens Saved: %s\n", report.FormatTok(int64(summary.TotalTokensSaved)))
 			fmt.Printf("Average Drop: %.1f%%\n\n", summary.AvgDropPct)
 
-			t := ui.NewTable("Session", "Timestamp", "Before", "After", "Saved", "Drop%").
+			t := ui.NewTable(i18n.T("common.sessions"), i18n.T("common.timestamp"), i18n.T("common.before"), i18n.T("common.after"), i18n.T("common.saved"), "Drop%").
 				RightAlign(2, 3, 4, 5)
 			max := 50
 			if len(summary.Events) < max {
@@ -294,7 +295,7 @@ func cmdCompaction() *cobra.Command {
 				totAfter += int64(e.AfterTokens)
 				totSaved += int64(saved)
 			}
-			t.TotalRow("TOTAL", "",
+			t.TotalRow(i18n.T("common.totals"), "",
 				report.FormatTok(totBefore),
 				report.FormatTok(totAfter),
 				report.FormatTok(totSaved),
@@ -309,7 +310,7 @@ func cmdCompaction() *cobra.Command {
 func cmdModelCompare() *cobra.Command {
 	return &cobra.Command{
 		Use:   "model-compare [model1] [model2] ...",
-		Short: "Compare models side by side (cost, tokens, latency, cache hit, speed)",
+		Short: i18n.T("cmd.modelCompare"),
 		Args:  cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
@@ -324,8 +325,8 @@ func cmdModelCompare() *cobra.Command {
 				fmt.Println("No models found.")
 				return
 			}
-			t := ui.NewTable("Model", "Requests", "Input", "Output", "Cost",
-				"Avg Latency", "Tokens/sec", "Cache Hit%").
+			t := ui.NewTable(i18n.T("common.model"), i18n.T("common.requests"), i18n.T("common.input"), i18n.T("common.output"), i18n.T("common.cost"),
+				i18n.T("common.avgLat"), i18n.T("common.tokensPerSec"), i18n.T("common.cacheHit")).
 				RightAlign(1, 2, 3, 4, 5, 6, 7)
 			var totReq int
 			var totIn, totOut int64
@@ -344,7 +345,7 @@ func cmdModelCompare() *cobra.Command {
 				totOut += row.OutputTokens
 				totCost += row.Cost
 			}
-			t.TotalRow("TOTAL",
+			t.TotalRow(i18n.T("common.totals"),
 				fmt.Sprintf("%d", totReq),
 				report.FormatTok(totIn),
 				report.FormatTok(totOut),
@@ -361,7 +362,7 @@ func cmdYield() *cobra.Command {
 	var days int
 	c := &cobra.Command{
 		Use:   "yield",
-		Short: "Show productive vs abandoned spend (correlates sessions with git commits)",
+		Short: i18n.T("cmd.yield"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
@@ -420,7 +421,7 @@ func yieldReport(ss []model.Session) {
 	var productiveCost, abandonedCost float64
 	var productiveSessions, abandonedSessions int
 
-	t := ui.NewTable("Session", "Title", "Commits", "Last Commit", "Cost", "Yield").
+	t := ui.NewTable(i18n.T("common.sessions"), i18n.T("common.title"), i18n.T("common.commits"), i18n.T("common.lastCommit"), i18n.T("common.cost"), "Yield").
 		RightAlign(2, 4)
 	for _, res := range results {
 		cost, _ := report.SessionCost(&res.session)
@@ -506,7 +507,7 @@ func pctOf(part, total float64) float64 {
 func cmdContext() *cobra.Command {
 	return &cobra.Command{
 		Use:   "context <session-id>",
-		Short: "Analyze what fills a session's context window",
+		Short: i18n.T("cmd.context"),
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
@@ -546,7 +547,7 @@ func cmdAnalytics() *cobra.Command {
 	var days int
 	c := &cobra.Command{
 		Use:   "analytics",
-		Short: "Comprehensive analytics overview (cache, efficiency, tasks, waste, compaction)",
+		Short: i18n.T("cmd.analytics"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()

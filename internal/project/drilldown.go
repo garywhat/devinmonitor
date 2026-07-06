@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/garywhat/devinmonitor/internal/cli"
+	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/reader"
 	"github.com/garywhat/devinmonitor/internal/report"
@@ -39,7 +40,7 @@ var cmdProject = func() *cobra.Command {
 	var detail bool
 	c := &cobra.Command{
 		Use:   "project <name> [--days 30] [--detail]",
-		Short: "Per-project drill-down: daily, model, and tool breakdown",
+		Short: i18n.T("cmd.project"),
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)

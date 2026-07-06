@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/garywhat/devinmonitor/internal/config"
+	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/report"
 	"github.com/garywhat/devinmonitor/internal/ui"
@@ -24,13 +25,13 @@ import (
 func printPeriodRows(rows []report.TimeRow, labelHeader string) {
 	t := ui.NewTable(
 		labelHeader,
-		"Sessions",
-		"Reqs",
-		"Input",
-		"Output",
-		"Cache R",
-		"Total",
-		"Cost",
+		i18n.T("common.sessions"),
+		i18n.T("common.requests"),
+		i18n.T("common.input"),
+		i18n.T("common.output"),
+		i18n.T("common.cacheRead"),
+		i18n.T("common.total"),
+		i18n.T("common.cost"),
 	).RightAlign(1, 2, 3, 4, 5, 6)
 	var totReq, totSess int
 	var totIn, totOut, totCR int64
@@ -58,7 +59,7 @@ func printPeriodRows(rows []report.TimeRow, labelHeader string) {
 		totCost += row.Cost
 	}
 	t.TotalRow(
-		"TOTALS",
+		i18n.T("common.totals"),
 		fmt.Sprintf("%d", totSess),
 		fmt.Sprintf("%d", totReq),
 		report.FormatTok(totIn),
@@ -75,7 +76,7 @@ func printPeriodRows(rows []report.TimeRow, labelHeader string) {
 var cmdAlias = func() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "alias [list|add <short> <long>|remove <short>]",
-		Short: "Manage command aliases",
+		Short: i18n.T("cmd.alias"),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.Global()
 			if len(args) == 0 || args[0] == "list" {
@@ -145,7 +146,7 @@ var cmdSessionsEnhanced = func() *cobra.Command {
 	var save bool
 	c := &cobra.Command{
 		Use:   "sessions",
-		Short: "List sessions (with --sort, --save, --watch, --json)",
+		Short: i18n.T("cmd.sessions"),
 		Run: func(cmd *cobra.Command, args []string) {
 			// Apply saved sort if no explicit --sort.
 			cfg := config.Global()
@@ -256,9 +257,9 @@ func buildSessionsTable(rows []report.SessionRow, verbose bool) *ui.TableBuilder
 	var t *ui.TableBuilder
 	if verbose {
 		t = ui.NewTable(
-			"ID", "Title", "Model", "Mode", "Project",
-			"Subs", "Reqs", "Input", "Output", "Cache R",
-			"Duration", "Cost",
+			i18n.T("common.id"), i18n.T("common.title"), i18n.T("common.model"), i18n.T("common.mode"), i18n.T("common.project"),
+			i18n.T("common.subAgents"), i18n.T("common.requests"), i18n.T("common.input"), i18n.T("common.output"), i18n.T("common.cacheRead"),
+			i18n.T("common.duration"), i18n.T("common.cost"),
 		).RightAlign(5, 6, 7, 8, 9, 10)
 		var totReq int
 		var totIn, totOut, totCR int64
@@ -286,7 +287,7 @@ func buildSessionsTable(rows []report.SessionRow, verbose bool) *ui.TableBuilder
 			totCost += row.Cost
 		}
 		t.TotalRow(
-			"TOTALS", "", "", "", "", "",
+			i18n.T("common.totals"), "", "", "", "", "",
 			fmt.Sprintf("%d", totReq),
 			report.FormatTok(totIn),
 			report.FormatTok(totOut),
@@ -296,7 +297,7 @@ func buildSessionsTable(rows []report.SessionRow, verbose bool) *ui.TableBuilder
 		)
 	} else {
 		t = ui.NewTable(
-			"ID", "Title", "Model", "Project", "Reqs", "Input", "Cost",
+			i18n.T("common.id"), i18n.T("common.title"), i18n.T("common.model"), i18n.T("common.project"), i18n.T("common.requests"), i18n.T("common.input"), i18n.T("common.cost"),
 		).RightAlign(4, 5)
 		var totReq int
 		var totIn int64
@@ -316,7 +317,7 @@ func buildSessionsTable(rows []report.SessionRow, verbose bool) *ui.TableBuilder
 			totCost += row.Cost
 		}
 		t.TotalRow(
-			"TOTALS", "", "", "",
+			i18n.T("common.totals"), "", "", "",
 			fmt.Sprintf("%d", totReq),
 			report.FormatTok(totIn),
 			report.FormatCost(totCost, false),
@@ -331,7 +332,7 @@ var cmdDailyEnhanced = func() *cobra.Command {
 	var breakdown, watch, today bool
 	c := &cobra.Command{
 		Use:   "daily",
-		Short: "Daily usage report (with --watch, --today)",
+		Short: i18n.T("cmd.daily"),
 		Run: func(cmd *cobra.Command, args []string) {
 			render := func() error {
 				r := openReader(cmd)
@@ -380,8 +381,8 @@ var cmdDailyEnhanced = func() *cobra.Command {
 func printDailyRows(rows []report.TimeRow, breakdown bool) {
 	if breakdown {
 		t := ui.NewTable(
-			"Date", "Model", "Sessions", "Reqs", "Input", "Output",
-			"Cache R", "Cache W", "Cost",
+			i18n.T("common.date"), i18n.T("common.model"), i18n.T("common.sessions"), i18n.T("common.requests"), i18n.T("common.input"), i18n.T("common.output"),
+			i18n.T("common.cacheRead"), i18n.T("common.cacheWr"), i18n.T("common.cost"),
 		).RightAlign(2, 3, 4, 5, 6, 7)
 		for _, row := range rows {
 			costStr := report.FormatCost(row.Cost, false)
@@ -407,8 +408,8 @@ func printDailyRows(rows []report.TimeRow, breakdown bool) {
 		return
 	}
 	t := ui.NewTable(
-		"Date", "Sessions", "Subs", "Reqs", "Input", "Output",
-		"Cache R", "Total", "Cost", "Model",
+		i18n.T("common.date"), i18n.T("common.sessions"), i18n.T("common.subAgents"), i18n.T("common.requests"), i18n.T("common.input"), i18n.T("common.output"),
+		i18n.T("common.cacheRead"), i18n.T("common.total"), i18n.T("common.cost"), i18n.T("common.model"),
 	).RightAlign(1, 2, 3, 4, 5, 6, 7)
 	var totReq, totSess, totSubs int
 	var totIn, totOut, totCR int64
@@ -447,7 +448,7 @@ func printDailyRows(rows []report.TimeRow, breakdown bool) {
 		totSubsStr = fmt.Sprintf("%d", totSubs)
 	}
 	t.TotalRow(
-		"TOTALS",
+		i18n.T("common.totals"),
 		fmt.Sprintf("%d", totSess),
 		totSubsStr,
 		fmt.Sprintf("%d", totReq),

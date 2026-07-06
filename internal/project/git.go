@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/report"
 	"github.com/garywhat/devinmonitor/internal/ui"
@@ -23,7 +24,7 @@ var cmdGit = func() *cobra.Command {
 	var days int
 	c := &cobra.Command{
 		Use:   "git [--session <id>|--days 30]",
-		Short: "Correlate sessions with git commits in their working directory",
+		Short: i18n.T("cmd.git"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()

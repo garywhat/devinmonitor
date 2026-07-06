@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/garywhat/devinmonitor/internal/cli"
+	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/reader"
 	"github.com/garywhat/devinmonitor/internal/report"
 )
@@ -62,7 +63,7 @@ func cmdTrends() *cobra.Command {
 	var rng string
 	c := &cobra.Command{
 		Use:   "trends",
-		Short: "Show cost and usage trends",
+		Short: i18n.T("cmd.trends"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
@@ -109,7 +110,7 @@ func cmdTrends() *cobra.Command {
 func cmdHeatmap() *cobra.Command {
 	return &cobra.Command{
 		Use:   "heatmap",
-		Short: "Show weekday × hour activity heatmap",
+		Short: i18n.T("cmd.heatmap"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
@@ -130,7 +131,7 @@ func cmdCalendar() *cobra.Command {
 	var year int
 	c := &cobra.Command{
 		Use:   "calendar",
-		Short: "Show full-year contribution calendar",
+		Short: i18n.T("cmd.calendar"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
@@ -156,7 +157,7 @@ func cmdCompare() *cobra.Command {
 	var current, previous, mode string
 	c := &cobra.Command{
 		Use:   "compare",
-		Short: "Compare two time periods side by side",
+		Short: i18n.T("cmd.compare"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
@@ -228,7 +229,7 @@ func parsePeriod(s string) (time.Time, time.Time, error) {
 func cmdToday24h() *cobra.Command {
 	return &cobra.Command{
 		Use:   "24h",
-		Short: "Show activity over the last 24 hours (hourly chart)",
+		Short: i18n.T("cmd.h24"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()

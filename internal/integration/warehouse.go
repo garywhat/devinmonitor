@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/report"
 	"github.com/garywhat/devinmonitor/internal/ui"
@@ -99,7 +100,7 @@ type warehouseSnapshot struct {
 var cmdWarehouse = func() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "warehouse [snapshot|list|show <id>]",
-		Short: "Manage local usage warehouse (time-series snapshots)",
+		Short: i18n.T("cmd.warehouse"),
 		Run: func(cmd *cobra.Command, args []string) {
 			if len(args) == 0 {
 				fmt.Fprintln(os.Stderr, "usage: warehouse [snapshot|list|show <id>]")

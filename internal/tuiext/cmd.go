@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/garywhat/devinmonitor/internal/cli"
+	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/live"
 )
 
@@ -27,7 +28,7 @@ func init() {
 func cmdTheme() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "theme [list|set <name>|show]",
-		Short: "Manage TUI color themes",
+		Short: i18n.T("cmd.theme"),
 		Long:  "Manage TUI color themes. Subcommands: list (default), set <name>, show.\n15 built-in themes: auto, dark, light, dracula, nord, solarized-dark, solarized-light, gruvbox, monokai, tokyo-night, catppuccin, everforest, gruvbox-light, rose-pine, github",
 		Args:  cobra.MaximumNArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -67,7 +68,7 @@ func cmdReplay() *cobra.Command {
 	dataDir := ""
 	c := &cobra.Command{
 		Use:   "replay <session-id>",
-		Short: "Replay a session message by message",
+		Short: i18n.T("cmd.replay"),
 		Long:  "Plays back a session's messages in chronological order with timestamps.\nControls: Space=pause/resume, Left/Right=step, q=quit.",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -88,7 +89,7 @@ func cmdTimeline() *cobra.Command {
 	dataDir := ""
 	c := &cobra.Command{
 		Use:   "timeline <session-id>",
-		Short: "Show a visual timeline of session activity",
+		Short: i18n.T("cmd.timeline"),
 		Long:  "Displays a horizontal timeline of message events, color-coded by type (user=blue, assistant=green, tool=yellow).",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {

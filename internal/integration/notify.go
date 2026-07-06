@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/garywhat/devinmonitor/internal/config"
+	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/report"
 )
@@ -154,7 +155,7 @@ var cmdNotify = func() *cobra.Command {
 	var test bool
 	c := &cobra.Command{
 		Use:   "notify",
-		Short: "Send desktop/webhook notifications (use --test to test)",
+		Short: i18n.T("cmd.notify"),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.Global()
 

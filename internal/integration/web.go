@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/reader"
 	"github.com/garywhat/devinmonitor/internal/report"
@@ -23,7 +24,7 @@ var cmdWeb = func() *cobra.Command {
 	var port int
 	c := &cobra.Command{
 		Use:   "web",
-		Short: "Start local web dashboard with charts and SSE live updates",
+		Short: i18n.T("cmd.web"),
 		Run: func(cmd *cobra.Command, args []string) {
 			runWebServer(cmd, port)
 		},

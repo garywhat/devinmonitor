@@ -10,6 +10,7 @@ import (
 
 	"github.com/garywhat/devinmonitor/internal/cli"
 	"github.com/garywhat/devinmonitor/internal/config"
+	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/reader"
 	"github.com/garywhat/devinmonitor/internal/report"
@@ -42,7 +43,7 @@ func openReader(dataDir string) reader.Reader {
 func cmdBudget() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "budget",
-		Short: "Show budget status with guardrails and gauges",
+		Short: i18n.T("cmd.budget"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader("")
 			defer r.Close()
@@ -91,7 +92,7 @@ func renderSavings(ss []model.Session, cfg *config.Config, now time.Time) string
 func cmdBurnRate() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "burn-rate",
-		Short: "Show spending velocity ($/hr, $/day, extrapolated)",
+		Short: i18n.T("cmd.burnRate"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader("")
 			defer r.Close()
@@ -119,7 +120,7 @@ func cmdBurnRate() *cobra.Command {
 func cmdProjection() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "projection",
-		Short: "Predict end-of-month spend and days to budget exhaustion",
+		Short: i18n.T("cmd.projection"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader("")
 			defer r.Close()
@@ -157,7 +158,7 @@ func cmdProjection() *cobra.Command {
 func cmdPlan() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "plan",
-		Short: "Show or configure your Devin subscription plan",
+		Short: i18n.T("cmd.plan"),
 	}
 	c.AddCommand(cmdPlanShow(), cmdPlanSet())
 	return c
@@ -231,7 +232,7 @@ func cmdPlanSet() *cobra.Command {
 func cmdCurrency() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "currency",
-		Short: "Show or set the display currency",
+		Short: i18n.T("cmd.currency"),
 	}
 	c.AddCommand(cmdCurrencyShow(), cmdCurrencySet(), cmdCurrencyReset())
 	return c
@@ -311,7 +312,7 @@ func cmdTopCost() *cobra.Command {
 	var limit int
 	c := &cobra.Command{
 		Use:   "top-cost",
-		Short: "Show the most expensive sessions",
+		Short: i18n.T("cmd.topCost"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader("")
 			defer r.Close()
@@ -322,7 +323,7 @@ func cmdTopCost() *cobra.Command {
 			}
 			summary := ComputeCostSummary(ss, time.Now())
 			top := summary.TopN(limit)
-			t := ui.NewTable("#", "ID", "Title", "Model", "Requests", "Cost").
+			t := ui.NewTable(i18n.T("common.number"), i18n.T("common.id"), i18n.T("common.title"), i18n.T("common.model"), i18n.T("common.requests"), i18n.T("common.cost")).
 				RightAlign(0, 4, 5)
 			var totReq int
 			var totCost float64
@@ -342,7 +343,7 @@ func cmdTopCost() *cobra.Command {
 				totReq += row.Requests
 				totCost += row.Cost
 			}
-			t.TotalRow("TOTAL", "", "", "",
+			t.TotalRow(i18n.T("common.totals"), "", "", "",
 				fmt.Sprintf("%d", totReq),
 				report.FormatCost(totCost, false))
 			fmt.Println(t.String())
@@ -357,7 +358,7 @@ func cmdTopCost() *cobra.Command {
 func cmdCost() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "cost",
-		Short: "Comprehensive cost overview with all metrics",
+		Short: i18n.T("cmd.cost"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader("")
 			defer r.Close()

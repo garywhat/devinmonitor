@@ -10,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/report"
 	"github.com/garywhat/devinmonitor/internal/ui"
@@ -167,8 +168,8 @@ func RenderSparklineTable(ss []model.Session) string {
 	}
 
 	t := ui.NewTable(
-		"ID", "Title", "Model", "Project",
-		"Reqs", "Cost", "Trend",
+		i18n.T("common.id"), i18n.T("common.title"), i18n.T("common.model"), i18n.T("common.project"),
+		i18n.T("common.requests"), i18n.T("common.cost"), i18n.T("common.trend"),
 	).RightAlign(4)
 
 	var totReqs int
@@ -196,7 +197,7 @@ func RenderSparklineTable(ss []model.Session) string {
 		totCost += r.Cost
 	}
 	t.TotalRow(
-		"TOTAL", "", "", "",
+		i18n.T("common.totals"), "", "", "",
 		fmt.Sprintf("%d", totReqs),
 		report.FormatCost(totCost, false),
 		"",

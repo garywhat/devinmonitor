@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/report"
 	"github.com/garywhat/devinmonitor/internal/ui"
@@ -20,7 +21,7 @@ var cmdProjects = func() *cobra.Command {
 	var attribution bool
 	c := &cobra.Command{
 		Use:   "projects",
-		Short: "Show per-project usage (with --attribution for cost breakdown)",
+		Short: i18n.T("cmd.projects"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
@@ -43,7 +44,7 @@ var cmdProjects = func() *cobra.Command {
 
 func printProjectsBasic(rows []report.ProjectRow) {
 	t := ui.NewTable(
-		"Project", "Sessions", "Reqs", "Input", "Output", "Total", "Cost", "Model",
+		i18n.T("common.project"), i18n.T("common.sessions"), i18n.T("common.requests"), i18n.T("common.input"), i18n.T("common.output"), i18n.T("common.total"), i18n.T("common.cost"), i18n.T("common.model"),
 	).RightAlign(1, 2, 3, 4, 5)
 	var totSessions, totReqs int
 	var totInput, totOutput, totTotal int64
@@ -70,7 +71,7 @@ func printProjectsBasic(rows []report.ProjectRow) {
 			compactModels(row.Models),
 		)
 	}
-	t.TotalRow("TOTAL",
+	t.TotalRow(i18n.T("common.totals"),
 		fmt.Sprintf("%d", totSessions),
 		fmt.Sprintf("%d", totReqs),
 		report.FormatTok(totInput),
@@ -87,7 +88,7 @@ func printProjectAttribution(rows []report.ProjectRow) {
 		totalCost += row.Cost
 	}
 	t := ui.NewTable(
-		"Project", "Sessions", "Cost", "Cost%", "Share",
+		i18n.T("common.project"), i18n.T("common.sessions"), i18n.T("common.cost"), i18n.T("common.costPct"), i18n.T("common.share"),
 	).RightAlign(1, 2, 3, 4)
 	for _, row := range rows {
 		pct := 0.0
@@ -103,7 +104,7 @@ func printProjectAttribution(rows []report.ProjectRow) {
 			bar,
 		)
 	}
-	t.TotalRow("TOTAL", "", fmt.Sprintf("$%.2f", totalCost), "100.0%", "")
+	t.TotalRow(i18n.T("common.totals"), "", fmt.Sprintf("$%.2f", totalCost), "100.0%", "")
 	fmt.Println(t.String())
 }
 
@@ -121,7 +122,7 @@ var cmdTools = func() *cobra.Command {
 	var all bool
 	c := &cobra.Command{
 		Use:   "tools [--session <id>|--all]",
-		Short: "Show tool cost attribution (cost distributed across tools)",
+		Short: i18n.T("cmd.tools"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
@@ -192,7 +193,7 @@ func printToolAttribution(ss []model.Session) {
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].calls > rows[j].calls })
 
-	t := ui.NewTable("Tool", "Calls", "Cost Share", "Tokens (est)").RightAlign(1, 2, 3)
+	t := ui.NewTable(i18n.T("common.tool"), i18n.T("common.calls"), "Cost Share", "Tokens (est)").RightAlign(1, 2, 3)
 	var totTokens int64
 	for _, r := range rows {
 		totTokens += r.tokens
@@ -201,7 +202,7 @@ func printToolAttribution(ss []model.Session) {
 			fmt.Sprintf("$%.4f", r.costShare),
 			report.FormatTok(r.tokens))
 	}
-	t.TotalRow("TOTAL",
+	t.TotalRow(i18n.T("common.totals"),
 		fmt.Sprintf("%d", totalCalls),
 		fmt.Sprintf("$%.4f", totalCost),
 		report.FormatTok(totTokens))
@@ -213,7 +214,7 @@ func printToolAttribution(ss []model.Session) {
 var cmdMCPUsage = func() *cobra.Command {
 	return &cobra.Command{
 		Use:   "mcp-stats",
-		Short: "Break down usage by MCP server (mcp_call_tool, mcp_list_tools, mcp_read_resource)",
+		Short: i18n.T("cmd.mcpStats"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
@@ -264,7 +265,7 @@ var cmdMCPUsage = func() *cobra.Command {
 			}
 			sort.Slice(rows, func(i, j int) bool { return rows[i].calls > rows[j].calls })
 
-			t := ui.NewTable("MCP Server", "Total Calls", "call_tool", "list_tools", "read_resource").RightAlign(1, 2, 3, 4)
+			t := ui.NewTable(i18n.T("common.server"), "Total Calls", "call_tool", "list_tools", "read_resource").RightAlign(1, 2, 3, 4)
 			var totCalls, totCallTool, totListTools, totReadResource int
 			for _, r := range rows {
 				totCalls += r.calls
@@ -277,7 +278,7 @@ var cmdMCPUsage = func() *cobra.Command {
 					fmt.Sprintf("%d", r.byTool["mcp_list_tools"]),
 					fmt.Sprintf("%d", r.byTool["mcp_read_resource"]))
 			}
-			t.TotalRow("TOTAL",
+			t.TotalRow(i18n.T("common.totals"),
 				fmt.Sprintf("%d", totCalls),
 				fmt.Sprintf("%d", totCallTool),
 				fmt.Sprintf("%d", totListTools),
@@ -312,7 +313,7 @@ func extractMCPServerName(argsJSON string) string {
 var cmdShellUsage = func() *cobra.Command {
 	return &cobra.Command{
 		Use:   "shell-usage",
-		Short: "Break down exec/shell_command usage by command category",
+		Short: i18n.T("cmd.shellUsage"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
@@ -368,7 +369,7 @@ var cmdShellUsage = func() *cobra.Command {
 			}
 			sort.Slice(rows, func(i, j int) bool { return rows[i].calls > rows[j].calls })
 
-			t := ui.NewTable("Category", "Calls", "Commands").RightAlign(1)
+			t := ui.NewTable(i18n.T("common.category"), i18n.T("common.calls"), i18n.T("common.commands")).RightAlign(1)
 			var totCalls int
 			for _, r := range rows {
 				totCalls += r.calls
@@ -378,7 +379,7 @@ var cmdShellUsage = func() *cobra.Command {
 				}
 				t.Row(r.category, fmt.Sprintf("%d", r.calls), cmdList)
 			}
-			t.TotalRow("TOTAL", fmt.Sprintf("%d", totCalls), "")
+			t.TotalRow(i18n.T("common.totals"), fmt.Sprintf("%d", totCalls), "")
 			fmt.Println(t.String())
 		},
 	}
@@ -475,7 +476,7 @@ func firstWord(s string) string {
 var cmdActivities = func() *cobra.Command {
 	return &cobra.Command{
 		Use:   "activities",
-		Short: "Break down usage by activity type (coding, debugging, testing, etc.)",
+		Short: i18n.T("cmd.activities"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
@@ -515,7 +516,7 @@ var cmdActivities = func() *cobra.Command {
 
 			var totalCost float64
 			var totalSessions int
-			t := ui.NewTable("Activity", "Sessions", "Cost", "Avg/Sess").RightAlign(1, 2, 3)
+			t := ui.NewTable(i18n.T("common.activity"), i18n.T("common.sessions"), i18n.T("common.cost"), i18n.T("common.avgSess")).RightAlign(1, 2, 3)
 			for _, r := range rows {
 				avg := 0.0
 				if r.count > 0 {
@@ -528,7 +529,7 @@ var cmdActivities = func() *cobra.Command {
 				totalCost += r.cost
 				totalSessions += r.count
 			}
-			t.TotalRow("TOTAL",
+			t.TotalRow(i18n.T("common.totals"),
 				fmt.Sprintf("%d", totalSessions),
 				fmt.Sprintf("$%.2f", totalCost), "")
 			fmt.Println(t.String())

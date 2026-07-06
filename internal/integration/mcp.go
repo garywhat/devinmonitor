@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/report"
 )
@@ -19,7 +20,7 @@ import (
 var cmdMCP = func() *cobra.Command {
 	return &cobra.Command{
 		Use:   "mcp",
-		Short: "Start MCP server on stdio (Model Context Protocol, JSON-RPC 2.0)",
+		Short: i18n.T("cmd.mcp"),
 		Run: func(cmd *cobra.Command, args []string) {
 			runMCPServer(cmd)
 		},

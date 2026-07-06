@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/garywhat/devinmonitor/internal/config"
+	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/ui"
 )
@@ -21,7 +22,7 @@ import (
 var cmdConfig = func() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "config",
-		Short: "View and edit devinmonitor configuration",
+		Short: i18n.T("cmd.config"),
 		// Default action when no subcommand: show config.
 		Run: func(cmd *cobra.Command, args []string) {
 			showConfig(config.Global())
@@ -31,7 +32,7 @@ var cmdConfig = func() *cobra.Command {
 	// Subcommand: config show
 	c.AddCommand(&cobra.Command{
 		Use:   "show",
-		Short: "Show current configuration (JSON)",
+		Short: i18n.T("cmd.configShow"),
 		Run: func(cmd *cobra.Command, args []string) {
 			showConfig(config.Global())
 		},
@@ -40,7 +41,7 @@ var cmdConfig = func() *cobra.Command {
 	// Subcommand: config set <key> <value>
 	c.AddCommand(&cobra.Command{
 		Use:   "set <key> <value>",
-		Short: "Set a configuration key",
+		Short: i18n.T("cmd.configSet"),
 		Args:  cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.Global()
@@ -59,7 +60,7 @@ var cmdConfig = func() *cobra.Command {
 	// Subcommand: config reset
 	c.AddCommand(&cobra.Command{
 		Use:   "reset",
-		Short: "Reset configuration to defaults",
+		Short: i18n.T("cmd.configReset"),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.Global()
 			*cfg = config.Config{}
@@ -174,7 +175,7 @@ func setConfigKey(cfg *config.Config, key, val string) error {
 var cmdConfigTimezoneSub = func() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "timezone [show|set <tz>|auto]",
-		Short: "Manage timezone for daily reset boundaries",
+		Short: i18n.T("cmd.configTimezone"),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.Global()
 			if len(args) == 0 || args[0] == "show" {
@@ -228,7 +229,7 @@ func detectTimezone() string {
 var cmdConfigResetHourSub = func() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "reset-hour <hour>",
-		Short: "Set custom daily reset hour (0-23)",
+		Short: i18n.T("cmd.configResetHour"),
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			h, err := strconv.Atoi(args[0])
@@ -253,7 +254,7 @@ var cmdConfigResetHourSub = func() *cobra.Command {
 var cmdModelAliasSub = func() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "model-alias [list|add <alias> <canonical>|remove <alias>]",
-		Short: "Manage model name aliases for pricing lookup",
+		Short: i18n.T("cmd.configModelAlias"),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.Global()
 			if len(args) == 0 || args[0] == "list" {
@@ -309,7 +310,7 @@ var cmdPricing = func() *cobra.Command {
 	var input, output, cacheRead, cacheWrite float64
 	c := &cobra.Command{
 		Use:   "pricing [list|set <model>|remove <model>]",
-		Short: "Manage custom pricing overrides (USD per million tokens)",
+		Short: i18n.T("cmd.pricing"),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.Global()
 			if len(args) == 0 || args[0] == "list" {

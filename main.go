@@ -49,6 +49,18 @@ func main() {
 	if err := i18n.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "i18n init: %v\n", err)
 	}
+	// Pre-scan --locale so that Short descriptions are translated before
+	// commands are built (cobra evaluates Short at registration time).
+	for i, arg := range os.Args {
+		if arg == "--locale" && i+1 < len(os.Args) {
+			i18n.SetLocale(os.Args[i+1])
+			break
+		}
+		if strings.HasPrefix(arg, "--locale=") {
+			i18n.SetLocale(strings.TrimPrefix(arg, "--locale="))
+			break
+		}
+	}
 	root := &cobra.Command{
 		Use:   "devinmonitor",
 		Short: i18n.T("app.tagline"),
