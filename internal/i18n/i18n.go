@@ -98,21 +98,19 @@ func detectOSLocale() string {
 	return normalize(osLocaleName())
 }
 
-// normalize turns "zh_CN.UTF-8" / "zh_CN.UTF8" / "zh_CN" / "zh" into "zh".
+// normalize turns "zh_CN.UTF-8" / "zh-CN" / "zh-Hans" / "zh" into "zh".
 func normalize(v string) string {
 	v = strings.TrimSpace(v)
 	if v == "" || strings.EqualFold(v, "C") || strings.EqualFold(v, "POSIX") {
 		return "en"
 	}
-	if i := strings.IndexAny(v, "_."); i > 0 {
-		v = v[:i]
-	}
-	switch strings.ToLower(v) {
-	case "zh", "zhcn", "chinese", "zh-cn", "zh-hans", "zh-hant":
+	// Strip encoding suffix (.UTF-8) and region/script suffix (_CN, -CN, -Hans).
+	// We only care about the language part (first 2 letters).
+	lower := strings.ToLower(v)
+	if strings.HasPrefix(lower, "zh") {
 		return "zh"
-	default:
-		return "en"
 	}
+	return "en"
 }
 
 // SetLocale switches the active locale at runtime. Returns the actual locale set.
