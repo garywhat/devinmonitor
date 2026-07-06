@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -57,19 +58,26 @@ func runWebServer(cmd *cobra.Command, port int) {
 
 	addr := fmt.Sprintf(":%d", port)
 	fmt.Fprintf(os.Stderr, "DevinMonitor web dashboard: http://localhost:%d\n", port)
+	fmt.Fprintf(os.Stderr, "Press Ctrl+C to stop.\n")
 
-	// Handle Ctrl+C gracefully.
+	srv := &http.Server{Addr: addr, Handler: mux}
+
+	// Graceful shutdown on Ctrl+C or SIGTERM.
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, os.Interrupt)
 		<-sigCh
-		os.Exit(0)
+		fmt.Fprintf(os.Stderr, "\nShutting down web server...\n")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
 	}()
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Fprintf(os.Stderr, "web server error: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Fprintf(os.Stderr, "Web server stopped.\n")
 }
 
 func (st *webState) loadSessions() ([]model.Session, error) {

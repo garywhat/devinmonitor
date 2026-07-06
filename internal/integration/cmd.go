@@ -101,10 +101,10 @@ func computeCostSummary(ss []model.Session) costSummary {
 
 func init() {
 	cli.Register(cmdToday)
-	cli.Register(cmdWeek)
-	cli.Register(cmdMonth)
+	// cmdWeek and cmdMonth removed — they are now aliases in main.go
+	// pointing to the existing "weekly" and "monthly" commands.
 	cli.Register(cmdAll)
-	cli.Register(cmdStatus)
+	cli.Register(cmdSnapshot)
 	cli.Register(cmdLs)
 	cli.Register(cmdWhoami)
 	cli.Register(cmdAlerts)

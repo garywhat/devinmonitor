@@ -17,7 +17,8 @@ func init() {
 	cli.Register(cmdTheme)
 	cli.Register(cmdReplay)
 	cli.Register(cmdTimeline)
-	cli.Register(cmdLiveExt)
+	// cmdLiveExt removed — its flags (--demo, --once, --light, --theme)
+	// are now integrated into the main "live" command in main.go.
 }
 
 // ---- theme command ----
@@ -101,42 +102,7 @@ func cmdTimeline() *cobra.Command {
 	return c
 }
 
-// ---- live-ext command (demo, once, light modes) ----
-
-// cmdLiveExt implements: devinmonitor live-ext [--demo] [--once] [--light] [--theme <name>]
-// Since we cannot edit the existing `live` command in main.go, this provides
-// the extended live mode with the new flags.
-func cmdLiveExt() *cobra.Command {
-	var (
-		dataDir string
-		demo    bool
-		once    bool
-		light   bool
-		theme   string
-		interval int
-	)
-	c := &cobra.Command{
-		Use:   "live-ext",
-		Short: "Extended live TUI with demo, once, and light modes",
-		Long:  "Extended live dashboard with interactive overlays (command palette, settings, help, popups, split pane, time window cycling, log tailing).\nFlags:\n  --demo   Run with synthetic demo data (no database needed)\n  --once   Render one frame and exit (non-interactive, for scripts/CI)\n  --light  Minimal rendering for slow terminals\n  --theme  Override theme (auto, dark, dracula, nord, ...)",
-		Run: func(cmd *cobra.Command, args []string) {
-			opts := live.RunOptions{
-				Demo:    demo,
-				Once:    once,
-				Light:   light,
-				Theme:   theme,
-			}
-			if err := live.RunLiveExt(dataDir, interval, opts); err != nil {
-				fmt.Fprintf(os.Stderr, "%v\n", err)
-				os.Exit(1)
-			}
-		},
-	}
-	c.Flags().StringVar(&dataDir, "data-dir", "", "override Devin data directory")
-	c.Flags().IntVar(&interval, "interval", 3, "refresh interval in seconds")
-	c.Flags().BoolVar(&demo, "demo", false, "run with synthetic demo data")
-	c.Flags().BoolVar(&once, "once", false, "render one frame and exit")
-	c.Flags().BoolVar(&light, "light", false, "minimal rendering for slow terminals")
-	c.Flags().StringVar(&theme, "theme", "", "override theme (auto, dark, dracula, nord, ...)")
-	return c
-}
+// cmdLiveExt was removed — its flags are now integrated into the main
+// "live" command in main.go. The live.RunLiveExt function still exists
+// in the live package and is called directly by cmdLive when --demo,
+// --once, --light, or --theme flags are used.

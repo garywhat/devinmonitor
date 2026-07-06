@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
+	"github.com/garywhat/devinmonitor/internal/cli"
 	"github.com/garywhat/devinmonitor/internal/export"
 	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/live"
@@ -19,6 +21,15 @@ import (
 	"github.com/garywhat/devinmonitor/internal/reader"
 	"github.com/garywhat/devinmonitor/internal/report"
 	"github.com/garywhat/devinmonitor/internal/ui"
+
+	// Feature packages self-register commands via cli.Register() in init().
+	_ "github.com/garywhat/devinmonitor/internal/analytics"
+	_ "github.com/garywhat/devinmonitor/internal/budget"
+	_ "github.com/garywhat/devinmonitor/internal/filterexport"
+	_ "github.com/garywhat/devinmonitor/internal/integration"
+	_ "github.com/garywhat/devinmonitor/internal/project"
+	_ "github.com/garywhat/devinmonitor/internal/trends"
+	_ "github.com/garywhat/devinmonitor/internal/tuiext"
 )
 
 var (
@@ -54,24 +65,77 @@ func main() {
 	// Disable alphabetical sorting so commands appear in registration order
 	// (logical grouping: live → sessions → time series → models → projects → agents → misc).
 	cobra.EnableCommandSorting = false
+
+	// Core commands from main.go.
+	// NOTE: cmdSessions, cmdDaily, cmdProjects, cmdExport are replaced by
+	// enhanced versions from the integration/filterexport/project packages
+	// that add --sort, --watch, --attribution, --format csv|md|html, etc.
 	root.AddCommand(
 		cmdLive(),
-		cmdSessions(),
+		// cmdSessions() → replaced by integration.cmdSessionsEnhanced (--sort, --save, --watch)
 		cmdSession(),
-		cmdDaily(),
+		// cmdDaily() → replaced by integration.cmdDailyEnhanced (--watch)
 		cmdWeekly(),
 		cmdMonthly(),
 		cmdModels(),
 		cmdModel(),
-		cmdProjects(),
+		// cmdProjects() → replaced by project.cmdProjects (--attribution)
 		cmdAgents(),
 		cmdMetrics(),
-		cmdExport(),
+		// cmdExport() → replaced by filterexport.cmdExport (--format csv|md|html|json)
 		cmdVersion(),
 	)
+
+	// Add all feature commands registered via cli.Register() by feature packages.
+	for _, fn := range cli.All() {
+		root.AddCommand(fn())
+	}
+
+	// Add aliases for common shortcuts.
+	addAliases(root)
+
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+// addAliases registers short aliases that point to existing commands.
+func addAliases(root *cobra.Command) {
+	// "week" → alias for "weekly"
+	if weekly := findCommand(root, "weekly"); weekly != nil {
+		alias := &cobra.Command{
+			Use:   "week",
+			Short: "Alias for weekly",
+			Run:   weekly.Run,
+		}
+		copyFlags(weekly, alias)
+		root.AddCommand(alias)
+	}
+	// "month" → alias for "monthly"
+	if monthly := findCommand(root, "monthly"); monthly != nil {
+		alias := &cobra.Command{
+			Use:   "month",
+			Short: "Alias for monthly",
+			Run:   monthly.Run,
+		}
+		copyFlags(monthly, alias)
+		root.AddCommand(alias)
+	}
+}
+
+func findCommand(root *cobra.Command, name string) *cobra.Command {
+	for _, cmd := range root.Commands() {
+		if cmd.Name() == name {
+			return cmd
+		}
+	}
+	return nil
+}
+
+func copyFlags(src, dst *cobra.Command) {
+	src.Flags().VisitAll(func(f *pflag.Flag) {
+		dst.Flags().AddFlag(f)
+	})
 }
 
 func openReader() reader.Reader {
@@ -86,10 +150,31 @@ func openReader() reader.Reader {
 // ---- live ----
 
 func cmdLive() *cobra.Command {
+	var (
+		demo  bool
+		once  bool
+		light bool
+		theme string
+	)
 	c := &cobra.Command{
 		Use:   "live",
 		Short: i18n.T("cmd.live"),
 		Run: func(cmd *cobra.Command, args []string) {
+			// If any extended flags are set, use RunLiveExt; otherwise use the
+			// original Run for backward compatibility.
+			if demo || once || light || theme != "" {
+				opts := live.RunOptions{
+					Demo:  demo,
+					Once:  once,
+					Light: light,
+					Theme: theme,
+				}
+				if err := live.RunLiveExt(flagDataDir, flagInterval, opts); err != nil {
+					fmt.Fprintf(os.Stderr, "%v\n", err)
+					os.Exit(1)
+				}
+				return
+			}
 			if err := live.Run(flagDataDir, flagInterval); err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
@@ -97,6 +182,10 @@ func cmdLive() *cobra.Command {
 		},
 	}
 	c.Flags().IntVar(&flagInterval, "interval", 3, i18n.T("help.interval"))
+	c.Flags().BoolVar(&demo, "demo", false, "run with synthetic demo data (no database needed)")
+	c.Flags().BoolVar(&once, "once", false, "render one frame and exit (non-interactive)")
+	c.Flags().BoolVar(&light, "light", false, "minimal rendering for slow terminals")
+	c.Flags().StringVar(&theme, "theme", "", "override theme (auto, dark, dracula, nord, ...)")
 	return c
 }
 

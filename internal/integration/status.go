@@ -14,11 +14,11 @@ import (
 	"github.com/garywhat/devinmonitor/internal/ui"
 )
 
-// ---- Status Command (#81) ----
+// ---- Snapshot Command (#81) ----
 
-var cmdStatus = func() *cobra.Command {
+var cmdSnapshot = func() *cobra.Command {
 	return &cobra.Command{
-		Use:   "status",
+		Use:   "snapshot",
 		Short: "Show current snapshot: active sessions, costs, ACU remaining",
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)

@@ -18,7 +18,7 @@ func init() {
 	cli.Register(cmdHeatmap)
 	cli.Register(cmdCalendar)
 	cli.Register(cmdCompare)
-	cli.Register(cmdToday)
+	cli.Register(cmdToday24h)
 }
 
 // openReader opens a reader using the inherited --data-dir persistent flag.
@@ -223,12 +223,12 @@ func parsePeriod(s string) (time.Time, time.Time, error) {
 	return start, end, nil
 }
 
-// ---- today / 24-hour usage (#23) ----
+// ---- today-24h / 24-hour usage chart (#23) ----
 
-func cmdToday() *cobra.Command {
+func cmdToday24h() *cobra.Command {
 	return &cobra.Command{
-		Use:   "today",
-		Short: "Show activity over the last 24 hours (alias for 24h view)",
+		Use:   "today-24h",
+		Short: "Show activity over the last 24 hours (hourly chart)",
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader(cmd)
 			defer r.Close()
