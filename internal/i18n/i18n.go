@@ -77,7 +77,7 @@ func flatten(prefix string, m map[string]interface{}, out map[string]string) {
 	}
 }
 
-// detectLocale picks a locale from env vars / system LANG.
+// detectLocale picks a locale from env vars / system LANG / OS settings.
 func detectLocale() string {
 	if v := os.Getenv("DEVINMONITOR_LOCALE"); v != "" {
 		return normalize(v)
@@ -87,7 +87,15 @@ func detectLocale() string {
 			return normalize(v)
 		}
 	}
-	return "en"
+	// Fall back to OS-level detection (Windows API, etc.).
+	return detectOSLocale()
+}
+
+// detectOSLocale tries to detect the locale from the operating system.
+// On Windows it calls GetUserDefaultLocaleName; on other platforms it
+// returns "en" (Unix systems typically set LANG already).
+func detectOSLocale() string {
+	return normalize(osLocaleName())
 }
 
 // normalize turns "zh_CN.UTF-8" / "zh_CN.UTF8" / "zh_CN" / "zh" into "zh".
@@ -100,7 +108,7 @@ func normalize(v string) string {
 		v = v[:i]
 	}
 	switch strings.ToLower(v) {
-	case "zh", "zhcn", "chinese":
+	case "zh", "zhcn", "chinese", "zh-cn", "zh-hans", "zh-hant":
 		return "zh"
 	default:
 		return "en"
