@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
 	"github.com/garywhat/devinmonitor/internal/cli"
 	"github.com/garywhat/devinmonitor/internal/export"
@@ -62,80 +61,117 @@ func main() {
 	root.PersistentFlags().StringVar(&flagDataDir, "data-dir", "", i18n.T("help.dataDir"))
 	root.PersistentFlags().StringVar(&flagLocale, "locale", "", i18n.T("help.locale"))
 
-	// Disable alphabetical sorting so commands appear in registration order
-	// (logical grouping: live → sessions → time series → models → projects → agents → misc).
+	// Disable alphabetical sorting so commands appear in the explicit
+	// logical grouping defined below.
 	cobra.EnableCommandSorting = false
 
-	// Core commands from main.go.
-	// NOTE: cmdSessions, cmdDaily, cmdProjects, cmdExport are replaced by
-	// enhanced versions from the integration/filterexport/project packages
-	// that add --sort, --watch, --attribution, --format csv|md|html, etc.
-	root.AddCommand(
-		cmdLive(),
-		// cmdSessions() → replaced by integration.cmdSessionsEnhanced (--sort, --save, --watch)
-		cmdSession(),
-		// cmdDaily() → replaced by integration.cmdDailyEnhanced (--watch)
-		cmdWeekly(),
-		cmdMonthly(),
-		cmdModels(),
-		cmdModel(),
-		// cmdProjects() → replaced by project.cmdProjects (--attribution)
-		cmdAgents(),
-		cmdMetrics(),
-		// cmdExport() → replaced by filterexport.cmdExport (--format csv|md|html|json)
-		cmdVersion(),
-	)
+	// Build the fully ordered command list (core + feature interleaved
+	// by logical group). Core commands from main.go are created directly;
+	// feature commands are pulled from the cli registry by name.
+	ordered := buildOrderedCommands()
 
-	// Add all feature commands registered via cli.Register() by feature packages.
-	for _, fn := range cli.All() {
-		root.AddCommand(fn())
+	// Track which feature command names we've already added via the
+	// explicit list, so we can append any stragglers at the end.
+	featureNames := make([]string, 0, len(ordered))
+	for _, cmd := range ordered {
+		if cmd.Name != "" {
+			featureNames = append(featureNames, cmd.Name)
+		}
 	}
 
-	// Add aliases for common shortcuts.
-	addAliases(root)
+	// Add all commands in the explicit grouped order.
+	for _, c := range ordered {
+		if c.Cmd != nil {
+			root.AddCommand(c.Cmd)
+		}
+	}
+
+	// Safety net: add any feature commands not in the explicit list.
+	for _, fn := range cli.Remaining(featureNames...) {
+		root.AddCommand(fn())
+	}
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
 }
 
-// addAliases registers short aliases that point to existing commands.
-func addAliases(root *cobra.Command) {
-	// "week" → alias for "weekly"
-	if weekly := findCommand(root, "weekly"); weekly != nil {
-		alias := &cobra.Command{
-			Use:   "week",
-			Short: "Alias for weekly",
-			Run:   weekly.Run,
-		}
-		copyFlags(weekly, alias)
-		root.AddCommand(alias)
-	}
-	// "month" → alias for "monthly"
-	if monthly := findCommand(root, "monthly"); monthly != nil {
-		alias := &cobra.Command{
-			Use:   "month",
-			Short: "Alias for monthly",
-			Run:   monthly.Run,
-		}
-		copyFlags(monthly, alias)
-		root.AddCommand(alias)
-	}
+// cmdEntry is a single command in the ordered list.
+// For core commands (from main.go), Name is "" and Cmd is set directly.
+// For feature commands, Name is the cobra Use name used to look up
+// the factory from the cli registry.
+type cmdEntry struct {
+	Name string              // feature command name, "" for core
+	Cmd  *cobra.Command      // resolved cobra command
 }
 
-func findCommand(root *cobra.Command, name string) *cobra.Command {
-	for _, cmd := range root.Commands() {
-		if cmd.Name() == name {
-			return cmd
-		}
+// buildOrderedCommands builds the full interleaved command list in
+// logical group order, mixing core (main.go) and feature commands.
+func buildOrderedCommands() []cmdEntry {
+	// Helper to create a core command entry.
+	core := func(cmd *cobra.Command) cmdEntry {
+		return cmdEntry{Cmd: cmd}
 	}
-	return nil
-}
+	// Helper to create a feature command entry by registry name.
+	feat := func(name string) cmdEntry {
+		fn := cli.Get(name)
+		if fn == nil {
+			return cmdEntry{Name: name} // placeholder, will be skipped
+		}
+		return cmdEntry{Name: name, Cmd: fn()}
+	}
 
-func copyFlags(src, dst *cobra.Command) {
-	src.Flags().VisitAll(func(f *pflag.Flag) {
-		dst.Flags().AddFlag(f)
-	})
+	return []cmdEntry{
+		// --- Live & TUI ---
+		core(cmdLive()),
+		feat("theme"), feat("replay"), feat("timeline"),
+
+		// --- Sessions ---
+		core(cmdSession()),
+		feat("sessions"), feat("ls"), feat("filter"), feat("search"),
+		feat("pin"), feat("unpin"),
+
+		// --- Time Reports ---
+		core(cmdWeekly()),
+		core(cmdMonthly()),
+		feat("daily"), feat("today"), feat("all"), feat("today-24h"),
+
+		// --- Cost & Budget ---
+		feat("cost"), feat("budget"), feat("burn-rate"), feat("projection"),
+		feat("top-cost"), feat("plan"), feat("currency"),
+
+		// --- Analytics ---
+		feat("cache"), feat("efficiency"), feat("tasks"), feat("optimize"),
+		feat("compaction"), feat("context"), feat("analytics"),
+		feat("model-compare"), feat("yield"),
+
+		// --- Trends & Charts ---
+		feat("trends"), feat("heatmap"), feat("calendar"), feat("compare"),
+
+		// --- Projects & Tools ---
+		feat("projects"), feat("project"), feat("tools"),
+		feat("mcp-usage"), feat("shell-usage"), feat("activities"), feat("git"),
+
+		// --- Models ---
+		core(cmdModels()),
+		core(cmdModel()),
+		core(cmdAgents()),
+
+		// --- Export & Backup ---
+		feat("export"), feat("report"), feat("backup"), feat("status"),
+
+		// --- Integration ---
+		feat("mcp"), feat("web"), feat("notify"),
+		feat("snapshot"), feat("alerts"), feat("whoami"),
+
+		// --- Config ---
+		feat("config"), feat("config-timezone"), feat("config-reset-hour"),
+		feat("alias"), feat("model-alias"), feat("pricing"), feat("warehouse"),
+
+		// --- System ---
+		core(cmdMetrics()),
+		core(cmdVersion()),
+	}
 }
 
 func openReader() reader.Reader {
