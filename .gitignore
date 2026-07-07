@@ -21,3 +21,14 @@ Thumbs.db
 
 # Test artifacts
 /tmp/
+
+# AI agent config (local only, not for the repo)
+AGENTS.md
+PLAN.md
+TASK.md
+.devin/
+.claude/
+.agents/
+.cursor/
+.serena/
+
