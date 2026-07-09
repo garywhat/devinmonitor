@@ -82,13 +82,13 @@ var cmdConfig = func() *cobra.Command {
 	})
 
 	// Subcommand: config timezone [show|set <tz>|auto]
-	c.AddCommand(cmdConfigTimezoneSub)
+	c.AddCommand(cmdConfigTimezoneSub())
 
 	// Subcommand: config reset-hour <hour>
-	c.AddCommand(cmdConfigResetHourSub)
+	c.AddCommand(cmdConfigResetHourSub())
 
 	// Subcommand: config model-alias [list|add <alias> <canonical>|remove <alias>]
-	c.AddCommand(cmdModelAliasSub)
+	c.AddCommand(cmdModelAliasSub())
 
 	return c
 }
@@ -207,7 +207,7 @@ var cmdConfigTimezoneSub = func() *cobra.Command {
 		},
 	}
 	return c
-}()
+}
 
 // detectTimezone auto-detects the system timezone.
 func detectTimezone() string {
@@ -247,7 +247,7 @@ var cmdConfigResetHourSub = func() *cobra.Command {
 		},
 	}
 	return c
-}()
+}
 
 // ---- Model Aliases subcommand (#90) ----
 
@@ -302,7 +302,7 @@ var cmdModelAliasSub = func() *cobra.Command {
 		},
 	}
 	return c
-}()
+}
 
 // ---- Custom Pricing (#91) ----
 

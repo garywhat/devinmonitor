@@ -167,7 +167,7 @@ func cmdPlan() *cobra.Command {
 func cmdPlanShow() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show",
-		Short: "Show current plan and ACU usage",
+		Short: i18n.T("cmd.planShow"),
 		Run: func(cmd *cobra.Command, args []string) {
 			r := openReader("")
 			defer r.Close()
@@ -203,7 +203,7 @@ func cmdPlanSet() *cobra.Command {
 	var monthly, acu float64
 	c := &cobra.Command{
 		Use:   "set <name>",
-		Short: "Set your Devin plan, monthly cost, and ACU limit",
+		Short: i18n.T("cmd.planSet"),
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.Global()
@@ -241,7 +241,7 @@ func cmdCurrency() *cobra.Command {
 func cmdCurrencyShow() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show",
-		Short: "Show the current display currency and rate",
+		Short: i18n.T("cmd.currencyShow"),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.Global()
 			cur := cfg.Currency
@@ -271,7 +271,7 @@ func availNote(ok bool) string {
 func cmdCurrencySet() *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <code>",
-		Short: "Set the display currency (ISO 4217 code)",
+		Short: i18n.T("cmd.currencySet"),
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			code := strings.ToUpper(args[0])
@@ -293,7 +293,7 @@ func cmdCurrencySet() *cobra.Command {
 func cmdCurrencyReset() *cobra.Command {
 	return &cobra.Command{
 		Use:   "reset",
-		Short: "Reset the display currency to USD",
+		Short: i18n.T("cmd.currencyReset"),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.Global()
 			cfg.Currency = "USD"
