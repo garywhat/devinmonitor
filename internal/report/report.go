@@ -58,21 +58,24 @@ func SessionCost(s *model.Session) (cost float64, estimated bool) {
 // ---- Sessions report ----
 
 type SessionRow struct {
-	ID           string
-	Title        string
-	Model        string
-	Mode         string
-	Project      string
-	Requests     int
-	InputTok     int64
-	OutputTok    int64
-	CacheRead    int64
-	Duration     time.Duration
-	Cost         float64
+	ID            string
+	Title         string
+	Model         string
+	Mode          string
+	Project       string
+	Requests      int
+	InputTok      int64
+	OutputTok     int64
+	CacheRead     int64
+	Duration      time.Duration
+	Cost          float64
 	CostEstimated bool
-	IsFree       bool
-	ToolCalls    map[string]int
-	SubAgents    int // workflow sub-agent count (0 if standalone)
+	IsFree        bool
+	ToolCalls     map[string]int
+	SubAgents     int // workflow sub-agent count (0 if standalone)
+	// LastActivity is the session's last-activity timestamp, used to sort
+	// the list newest-first (matches the reader's ORDER BY and docs).
+	LastActivity time.Time
 }
 
 // BuildSessionRows converts sessions to display rows, sorted newest first.
@@ -98,10 +101,14 @@ func BuildSessionRows(ss []model.Session) []SessionRow {
 			IsFree:        p.Free,
 			ToolCalls:     s.ToolCalls,
 			SubAgents:     len(s.SubAgentCalls),
+			LastActivity:  s.LastActivityAt,
 		})
 	}
-	sort.Slice(rows, func(i, j int) bool {
-		return rows[i].Requests > rows[j].Requests // by activity for now
+	// Newest first by last activity, matching the reader's ORDER BY and the
+	// documented "newest first" behavior. (Previously this sorted by request
+	// count, which contradicted the docs.)
+	sort.SliceStable(rows, func(i, j int) bool {
+		return rows[i].LastActivity.After(rows[j].LastActivity)
 	})
 	return rows
 }
@@ -141,7 +148,7 @@ func BuildProjectRows(ss []model.Session) []ProjectRow {
 		proj := baseProject(s.WorkingDir)
 		pr := byProj[proj]
 		if pr == nil {
-			pr = &ProjectRow{Name: proj}
+			pr = &ProjectRow{Name: proj, IsFree: true}
 			byProj[proj] = pr
 		}
 		pr.Sessions++
@@ -152,7 +159,10 @@ func BuildProjectRows(ss []model.Session) []ProjectRow {
 		pr.CacheWrite += s.CacheWrite
 		cost, _ := SessionCost(&s)
 		pr.Cost += cost
-		if s.CreditCost > 0 || s.ACUCost > 0 {
+		// IsFree is true only if ALL sessions in the project carry no cost
+		// (authoritative credit/ACU or estimate). Any non-zero cost makes it
+		// a paid project. (Starts true; flipped off on first paid session.)
+		if cost > 0 {
 			pr.IsFree = false
 		}
 		// Collect unique models.
@@ -220,8 +230,21 @@ func BuildAgentStats(ss []model.Session) []AgentStats {
 			}
 			if sa.HasCompletion {
 				st.Completed++
+				// Cap the duration at the parent session's lifetime: a
+				// sub-agent cannot outlive its session. This guards against
+				// timestamp skew from Devin's duplicate (streaming+final)
+				// message nodes, which can carry wildly different created_at
+				// values and otherwise produce inflated (e.g. ~312h) or
+				// negative pseudo-durations.
 				d := sa.EndTime.Sub(sa.StartTime)
+				sessDur := s.LastActivityAt.Sub(s.CreatedAt)
+				if sessDur < 0 {
+					sessDur = 0
+				}
 				if d > 0 {
+					if d > sessDur {
+						d = sessDur
+					}
 					st.Durations = append(st.Durations, d)
 				}
 				if sa.OutputLen > 0 {
@@ -378,11 +401,19 @@ func BuildModelRows(ss []model.Session) []ModelRow {
 				modelSessions[m.GenerationModel][s.ID] = true
 			}
 		}
-		// Credit cost attribution: attribute session credit to its model.
+		// Credit cost attribution: attribute session credit to the model that
+		// actually served this session's requests (the dominant generation
+		// model, by request count). Tokens are already counted under
+		// GenerationModel, so attributing cost under the session-level s.Model
+		// would split cost and tokens across rows whenever the user switches
+		// models mid-session.
 		if s.CreditCost > 0 || s.ACUCost > 0 {
-			if ms, ok := byModel[s.Model]; ok {
-				ms.CreditCost += s.CreditCost
-				ms.ACUCost += s.ACUCost
+			target := dominantModel(&s)
+			if target != "" {
+				if ms, ok := byModel[target]; ok {
+					ms.CreditCost += s.CreditCost
+					ms.ACUCost += s.ACUCost
+				}
 			}
 		}
 	}
@@ -528,11 +559,14 @@ func BuildModelDetail(ss []model.Session, query string) (*ModelDetail, error) {
 				ms.FinishReasons[m.FinishReason]++
 			}
 		}
-		// Credit cost attribution.
+		// Credit cost attribution: use the dominant generation model so the
+		// cost lands on the same model row as the tokens it paid for.
 		if s.CreditCost > 0 || s.ACUCost > 0 {
-			if ms, ok := byModel[s.Model]; ok {
-				ms.CreditCost += s.CreditCost
-				ms.ACUCost += s.ACUCost
+			if target := dominantModel(&s); target != "" {
+				if ms, ok := byModel[target]; ok {
+					ms.CreditCost += s.CreditCost
+					ms.ACUCost += s.ACUCost
+				}
 			}
 		}
 	}
@@ -652,6 +686,10 @@ type TimeRow struct {
 	CostEstimated bool
 	Models      []string
 	ByModel     map[string]*model.ModelStats
+
+	// Internal bookkeeping for cost provenance.
+	anyCredit   bool // at least one session carried authoritative credit/ACU cost
+	anyEstimate bool // at least one session contributed estimated cost
 }
 
 // BuildDaily aggregates by calendar day (local time).
@@ -743,6 +781,9 @@ func buildTimeBuckets(ss []model.Session, key func(time.Time) string) []TimeRow 
 			}
 		}
 		// Credit cost and subagent attribution to the day of session activity.
+		// Cost is the session's effective cost: authoritative credit/ACU when
+		// present, otherwise an estimate from token pricing. Attribution goes
+		// to the bucket of the session's last activity.
 		if s.CreditCost > 0 || s.ACUCost > 0 || len(s.SubAgentCalls) > 0 {
 			k := key(s.LastActivityAt)
 			b := buckets[k]
@@ -751,20 +792,33 @@ func buildTimeBuckets(ss []model.Session, key func(time.Time) string) []TimeRow 
 				buckets[k] = b
 				sessionSeen[k] = map[string]bool{}
 			}
-			b.Cost += s.CreditCost + s.ACUCost
+			if s.CreditCost > 0 || s.ACUCost > 0 {
+				b.Cost += s.CreditCost + s.ACUCost
+				b.anyCredit = true
+			} else {
+				// No official cost: use the estimate so free/unknown sessions
+				// are not silently dropped when mixed with paid ones in a bucket.
+				c, _ := SessionCost(&s)
+				b.Cost += c
+				b.anyEstimate = true
+			}
 			b.SubAgents += len(s.SubAgentCalls)
 		}
 	}
 
-	// Fill estimated cost for buckets with zero credit cost.
+	// Fill estimated cost for buckets that carry no authoritative credit.
+	// (A bucket that mixes paid and free sessions already has both parts
+	// added above, so this only covers buckets purely from token data.)
 	for _, b := range buckets {
-		if b.Cost == 0 {
+		if b.Cost == 0 && !b.anyCredit {
 			var est float64
 			for mn, ms := range b.ByModel {
 				p := model.LookupPricing(mn)
 				est += model.EstimateCost(p, ms.InputTokens, ms.OutputTokens, ms.CacheRead, ms.CacheWrite)
 			}
 			b.Cost = est
+			b.CostEstimated = true
+		} else if b.Cost > 0 && b.anyEstimate && !b.anyCredit {
 			b.CostEstimated = true
 		}
 	}
@@ -784,6 +838,32 @@ func contains(xs []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// dominantModel returns the generation_model used by the most assistant
+// messages in the session. This is used to attribute session-level credit/ACU
+// cost to the model that actually served those requests. Returns "" when the
+// session has no assistant messages with a GenerationModel.
+func dominantModel(s *model.Session) string {
+	counts := map[string]int{}
+	for _, m := range s.Messages {
+		if m.Role != "assistant" || m.GenerationModel == "" {
+			continue
+		}
+		counts[m.GenerationModel]++
+	}
+	if len(counts) == 0 {
+		return ""
+	}
+	best := ""
+	max := 0
+	for name, c := range counts {
+		if c > max {
+			max = c
+			best = name
+		}
+	}
+	return best
 }
 
 // ParseWeekday converts "monday".."sunday" to time.Weekday. Default Monday.

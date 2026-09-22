@@ -67,19 +67,26 @@ func Open(dataDir string) (Reader, error) {
 //
 // Order: dataDir arg > DEVIN_DATA_DIR env > platform defaults.
 func ResolveDBPath(dataDir string) (string, error) {
-	candidates := []string{}
-
+	// An explicitly provided dataDir is authoritative: if dataDir/sessions.db
+	// does not exist, it is an error rather than silently falling through to
+	// the environment or platform defaults. This prevents the CLI from
+	// unknowingly analyzing the wrong (default) database when the user points
+	// at a bad path.
 	if dataDir != "" {
-		candidates = append(candidates, filepath.Join(dataDir, "sessions.db"))
+		c := filepath.Join(dataDir, "sessions.db")
+		if info, err := os.Stat(c); err == nil && !info.IsDir() {
+			return c, nil
+		}
+		return "", &ErrNoDB{Path: c}
 	}
+
+	candidates := []string{}
 	if env := os.Getenv("DEVIN_DATA_DIR"); env != "" {
 		candidates = append(candidates, filepath.Join(env, "sessions.db"))
 	}
-
 	for _, p := range platformDefaults() {
 		candidates = append(candidates, filepath.Join(p, "sessions.db"))
 	}
-
 	for _, c := range candidates {
 		if info, err := os.Stat(c); err == nil && !info.IsDir() {
 			return c, nil

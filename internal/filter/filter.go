@@ -71,7 +71,7 @@ func ExcludeProjects(ss []model.Session, exclude string) []model.Session {
 // "cost", "tokens", "context", "duration", "recent". Unknown values fall
 // back to "recent". desc controls ascending/descending.
 func SortBy(ss []model.Session, sortBy string, desc bool) {
-	less := func(i, j int) bool { return false }
+	var less func(i, j int) bool
 	switch sortBy {
 	case "cost":
 		less = func(i, j int) bool {
@@ -89,7 +89,7 @@ func SortBy(ss []model.Session, sortBy string, desc bool) {
 		less = func(i, j int) bool {
 			return ss[i].LastActivityAt.Sub(ss[i].CreatedAt) < ss[j].LastActivityAt.Sub(ss[j].CreatedAt)
 		}
-	case "recent", "":
+	default: // "recent", "", and unknown values all fall back to recency
 		less = func(i, j int) bool {
 			return ss[i].LastActivityAt.Before(ss[j].LastActivityAt)
 		}

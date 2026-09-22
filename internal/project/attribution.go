@@ -411,9 +411,12 @@ func categorizeCommand(cmd string) string {
 	for strings.Contains(cmd, "=") && !strings.HasPrefix(cmd, " ") {
 		parts := strings.SplitN(cmd, " ", 2)
 		if strings.Contains(parts[0], "=") && !isKnownCommand(parts[0]) {
-			if len(parts) > 1 {
-				cmd = parts[1]
+			// No command after the assignment (e.g. "FOO=bar"): stop to avoid
+			// an infinite loop, since cmd can never be reassigned.
+			if len(parts) <= 1 {
+				break
 			}
+			cmd = parts[1]
 		} else {
 			break
 		}

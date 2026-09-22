@@ -9,7 +9,9 @@ package filterexport
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -355,12 +357,29 @@ func cmdBackup() *cobra.Command {
 
 func cmdExport() *cobra.Command {
 	c := &cobra.Command{
-		Use:   "export",
+		Use:   "export [report_type]",
 		Short: i18n.T("cmd.export"),
+		Long:  i18n.T("help.exportTypes"),
+		// Optional report_type: sessions (default), daily, weekly, monthly,
+		// models, projects, agents. At most one positional argument.
+		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			format, _ := cmd.Flags().GetString("format")
 			output, _ := cmd.Flags().GetString("output")
 			detailed, _ := cmd.Flags().GetBool("detailed")
+
+			reportType := "sessions"
+			if len(args) == 1 {
+				reportType = strings.ToLower(strings.TrimSpace(args[0]))
+			}
+			// Accept the singular alias for parity with other tools.
+			if reportType == "session" {
+				reportType = "sessions"
+			}
+			if reportType != "sessions" && !export.IsReportType(reportType) {
+				fmt.Fprintf(os.Stderr, "unknown report type %q (use %s)\n", reportType, export.ReportTypeList())
+				os.Exit(1)
+			}
 
 			r := openReader(cmd)
 			defer r.Close()
@@ -381,36 +400,20 @@ func cmdExport() *cobra.Command {
 				out = f
 			}
 
-			switch format {
-			case "csv":
-				if err := export.WriteCSV(out, ss); err != nil {
-					fmt.Fprintf(os.Stderr, "csv: %v\n", err)
+			if reportType == "sessions" {
+				if err := writeSessionExport(out, format, ss, detailed); err != nil {
+					fmt.Fprintf(os.Stderr, "%v\n", err)
 					os.Exit(1)
 				}
-			case "markdown", "md":
-				if err := export.WriteMarkdown(out, ss); err != nil {
-					fmt.Fprintf(os.Stderr, "markdown: %v\n", err)
+			} else {
+				table, _ := export.BuildReportTable(reportType, ss)
+				if err := writeTableExport(out, format, table); err != nil {
+					fmt.Fprintf(os.Stderr, "%v\n", err)
 					os.Exit(1)
 				}
-			case "html":
-				if err := export.WriteHTML(out, ss); err != nil {
-					fmt.Fprintf(os.Stderr, "html: %v\n", err)
-					os.Exit(1)
-				}
-			case "json", "":
-				doc := export.BuildDocument(ss, detailed)
-				enc := json.NewEncoder(out)
-				enc.SetIndent("", "  ")
-				if err := enc.Encode(doc); err != nil {
-					fmt.Fprintf(os.Stderr, "json: %v\n", err)
-					os.Exit(1)
-				}
-			default:
-				fmt.Fprintf(os.Stderr, "unknown format %q (use csv|markdown|html|json)\n", format)
-				os.Exit(1)
 			}
 			if output != "" {
-				fmt.Printf("Exported %d sessions (%s) to %s\n", len(ss), format, output)
+				fmt.Printf("Exported %s (%s) to %s\n", reportType, format, output)
 			}
 		},
 	}
@@ -418,6 +421,42 @@ func cmdExport() *cobra.Command {
 	c.Flags().String("output", "", "output file (default stdout)")
 	c.Flags().Bool("detailed", false, "include per-request detail (JSON only)")
 	return c
+}
+
+// writeSessionExport renders the session-oriented report, preserving the
+// original export output (rich JSON document for json, session tables for the
+// other formats).
+func writeSessionExport(w io.Writer, format string, ss []model.Session, detailed bool) error {
+	switch format {
+	case "csv":
+		return export.WriteCSV(w, ss)
+	case "markdown", "md":
+		return export.WriteMarkdown(w, ss)
+	case "html":
+		return export.WriteHTML(w, ss)
+	case "json", "":
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(export.BuildDocument(ss, detailed))
+	default:
+		return fmt.Errorf("unknown format %q (use csv|markdown|html|json)", format)
+	}
+}
+
+// writeTableExport renders a generic report table in the requested format.
+func writeTableExport(w io.Writer, format string, t export.Table) error {
+	switch format {
+	case "csv":
+		return export.WriteTableCSV(w, t)
+	case "markdown", "md":
+		return export.WriteTableMarkdown(w, t)
+	case "html":
+		return export.WriteTableHTML(w, t)
+	case "json", "":
+		return export.WriteTableJSON(w, t)
+	default:
+		return fmt.Errorf("unknown format %q (use csv|markdown|html|json)", format)
+	}
 }
 
 // ---- output helpers ----

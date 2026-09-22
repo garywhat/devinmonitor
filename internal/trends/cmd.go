@@ -167,11 +167,18 @@ func cmdCompare() *cobra.Command {
 				os.Exit(1)
 			}
 
-			// Month-over-month shortcut (#20).
-			if strings.EqualFold(mode, "mom") {
+			// Month-over-month shortcut (#20). Reject unknown modes instead
+			// of silently falling through to the custom path.
+			switch strings.ToLower(strings.TrimSpace(mode)) {
+			case "mom":
 				pc := BuildMonthOverMonth(ss)
 				fmt.Println(RenderMonthOverMonth(pc))
 				return
+			case "", "custom":
+				// fall through to the custom period comparison below
+			default:
+				fmt.Fprintf(os.Stderr, "unknown --mode %q (use custom|mom)\n", mode)
+				os.Exit(1)
 			}
 
 			curStart, curEnd, err := parsePeriod(current)

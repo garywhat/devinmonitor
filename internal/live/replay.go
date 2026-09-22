@@ -2,6 +2,7 @@ package live
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -48,12 +49,11 @@ type replayModel struct {
 func newReplayModel(s *model.Session) replayModel {
 	msgs := make([]model.Message, len(s.Messages))
 	copy(msgs, s.Messages)
-	// Sort by creation time (should already be sorted, but ensure).
-	for i := 1; i < len(msgs); i++ {
-		for j := i; j > 0 && msgs[j].CreatedAt.Before(msgs[j-1].CreatedAt); j-- {
-			msgs[j], msgs[j-1] = msgs[j-1], msgs[j]
-		}
-	}
+	// Sort by creation time (should already be sorted, but ensure). O(n log n):
+	// the previous insertion sort froze the UI on large sessions.
+	sort.SliceStable(msgs, func(i, j int) bool {
+		return msgs[i].CreatedAt.Before(msgs[j].CreatedAt)
+	})
 	return replayModel{
 		session:   s,
 		messages:  msgs,

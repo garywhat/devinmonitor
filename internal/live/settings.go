@@ -83,17 +83,20 @@ type settingsField struct {
 }
 
 // newExtModel creates an ExtModel backed by a real reader.
-func newExtModel(r extReader, intervalSec int, light bool) ExtModel {
-	interval := time.Duration(intervalSec) * time.Second
-	if interval < 1*time.Second {
-		interval = 3 * time.Second
-	}
+// intervalMs is the polling interval in milliseconds (default 500).
+func newExtModel(r extReader, intervalMs int, light bool) ExtModel {
+	interval := intervalDur(intervalMs)
+	// Reuse the incremental LiveReader from the plain `live` dashboard. It
+	// caches each session and serialises concurrent polls; without it every
+	// tick re-reads the whole sessions.db and overlapping polls pile up on a
+	// large database, leaving the dashboard stuck on "Loading…" forever.
+	lr := reader.NewLiveReader(r)
 	m := ExtModel{
-		reader:   r,
+		reader:   lr,
 		interval: interval,
 		light:    light,
 		inner: model_{
-			reader:   r,
+			reader:   lr,
 			interval: interval,
 			loading:  true,
 		},
@@ -107,7 +110,8 @@ func newExtModel(r extReader, intervalSec int, light bool) ExtModel {
 // (used by demo mode and --once mode).
 func newExtModelWithSessions(ss []model.Session, light bool) ExtModel {
 	m := ExtModel{
-		light:  light,
+		light:    light,
+		interval: intervalDur(500),
 		inner: model_{
 			sessions: ss,
 			loading:  false,
@@ -138,7 +142,7 @@ func (m *ExtModel) initSettingsFields() {
 	cfg := config.Global()
 	m.settingsFields = []settingsField{
 		{Label: "Theme", Key: "theme", Value: cfg.Theme, Options: ListThemeNames()},
-		{Label: "Refresh Interval (s)", Key: "refreshInterval", Value: fmt.Sprintf("%d", cfg.RefreshInterval)},
+		{Label: "Refresh Interval (ms)", Key: "refreshInterval", Value: fmt.Sprintf("%d", cfg.RefreshInterval)},
 		{Label: "Currency", Key: "currency", Value: cfg.Currency, Options: []string{"USD", "EUR", "CNY", "GBP", "JPY"}},
 		{Label: "Budget Daily ($)", Key: "budgetDaily", Value: fmt.Sprintf("%.2f", cfg.BudgetDaily)},
 		{Label: "Budget Weekly ($)", Key: "budgetWeekly", Value: fmt.Sprintf("%.2f", cfg.BudgetWeekly)},
@@ -154,7 +158,9 @@ func (m ExtModel) Init() tea.Cmd {
 	if m.reader != nil {
 		return tea.Batch(poll(m.reader), tick(m.interval))
 	}
-	return nil
+	// Demo mode: no reader to poll, but keep ticking so the dashboard
+	// re-renders at the refresh interval (clock/rolling window stay current).
+	return tick(m.interval)
 }
 
 func (m ExtModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -704,9 +710,12 @@ func (m ExtModel) saveSettings() {
 		case "refreshInterval":
 			var n int
 			fmt.Sscanf(f.Value, "%d", &n)
-			if n > 0 {
-				cfg.RefreshInterval = n
+			// Millisecond interval; keep it at or above the floor used by
+			// intervalDur so the stored value matches what actually runs.
+			if n < MinIntervalMs {
+				n = MinIntervalMs
 			}
+			cfg.RefreshInterval = n
 		case "budgetDaily":
 			var v float64
 			fmt.Sscanf(f.Value, "%f", &v)
@@ -851,7 +860,11 @@ func filterByTimeWindow(ss []model.Session, tw int) []model.Session {
 	}
 	var out []model.Session
 	for _, s := range ss {
-		if s.CreatedAt.After(cutoff) || s.CreatedAt.Equal(cutoff) {
+		// Use LastActivityAt — a session created before the window but still
+		// active within it (e.g. created 3 days ago, active today) belongs in
+		// the window. Filtering on CreatedAt would wrongly drop it.
+		if (s.LastActivityAt.After(cutoff) || s.LastActivityAt.Equal(cutoff)) &&
+			!s.LastActivityAt.IsZero() {
 			out = append(out, s)
 		}
 	}

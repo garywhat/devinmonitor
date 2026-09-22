@@ -14,8 +14,8 @@ context growth, sub-agent usage) that other monitors don't offer.
 ## Live dashboard
 
 The `live` command renders a real-time bubbletea TUI that polls
-`sessions.db` every few seconds and shows a full at-a-glance view of
-the current session:
+`sessions.db` (every 500 ms by default) and shows a full at-a-glance
+view of the current session:
 
 ![Live dashboard](docs/images/live_dashboard.png)
 
@@ -35,6 +35,15 @@ the current session:
   distribution bar.
 - **Tools** — per-tool call counts with horizontal bars, including
   `run_subagent` and `read_subagent` calls.
+
+Polling is incremental: after the first load only sessions whose message
+count changed are re-read, so a short interval stays cheap even on a
+database with tens of thousands of messages.
+
+**`--interval`** sets the refresh interval in **milliseconds** (default
+`500`, minimum `100`). When the flag is omitted the `refreshInterval`
+config value is used; an explicit flag always wins. The same interval
+applies to the extended dashboard (`--light` / `--once` / `--theme`).
 
 ## Reports
 
@@ -97,6 +106,50 @@ output length.
 
 ![Sub-agent usage](docs/images/agents.png)
 
+### `export [report_type]` — machine-readable reports
+
+`export` writes any report to a file or stdout in four formats. The
+optional report type defaults to `sessions`:
+
+```bash
+devinmonitor export                       # sessions, rich JSON (schema 1)
+devinmonitor export daily --format csv
+devinmonitor export weekly --format markdown --output weekly.md
+devinmonitor export models --format html  > models.html
+devinmonitor export projects --format json
+```
+
+| Report type | Contents |
+|---|---|
+| `sessions` (default) | Full normalized document (`export_schema: 1`), stable for web upload |
+| `daily` / `weekly` / `monthly` | Time buckets with cost, tokens, requests, cache ratio |
+| `models` | Per-model totals, cost, TTFT and throughput percentiles |
+| `projects` | Per-project totals keyed by working directory |
+| `agents` | Sub-agent usage grouped by profile |
+
+Formats: `csv`, `markdown`, `html`, `json`. An unknown report type or
+format exits non-zero with a usage hint. `--detailed` still embeds the
+per-request detail in the `sessions` document.
+
+## MCP server
+
+`devinmonitor mcp` runs a Model Context Protocol server over stdio, so
+an MCP client (Claude Desktop, Cursor, …) can query your local usage
+data directly. It speaks both stdio framings — the spec's
+`Content-Length` framing and bare newline-delimited JSON — and supports
+JSON-RPC batching, notifications, and `ping`.
+
+Tools exposed: `get_sessions`, `get_session`, `get_cost_summary`,
+`get_alerts`.
+
+```json
+{
+  "mcpServers": {
+    "devinmonitor": { "command": "devinmonitor", "args": ["mcp"] }
+  }
+}
+```
+
 ## Install
 
 ```bash
@@ -117,6 +170,9 @@ go build -o devinmonitor .
 ```bash
 # Real-time dashboard (needs a TTY)
 devinmonitor live
+
+# Faster refresh: 200 ms (milliseconds, minimum 100)
+devinmonitor live --interval 200
 
 # Session list
 devinmonitor sessions
@@ -150,6 +206,12 @@ devinmonitor metrics --addr :9101
 
 # Export normalized JSON
 devinmonitor export --detailed > usage.json
+
+# Export a specific report type: sessions|daily|weekly|monthly|models|projects|agents
+devinmonitor export weekly --format markdown --output weekly.md
+
+# MCP server over stdio (Claude Desktop / Cursor)
+devinmonitor mcp
 ```
 
 ### Global flags
@@ -167,6 +229,38 @@ r          switch to next session
 1-4 / Tab  jump to section (compact mode)
 L          toggle locale (en <-> zh)
 ```
+
+The extended dashboard (`--light` / `--theme`) adds:
+
+```
+s          settings panel (theme, refreshInterval, budgets, currency)
+?          help overlay
+Ctrl+P     command palette
+Enter      session detail popup
+m          model breakdown popup
+|          split pane (list + details)
+v          toggle list / card-grid view
+t          cycle time window (today / week / month / all)
+l          live log tail of recent messages
+```
+
+## Upgrade notes — v0.3.0
+
+- **`live --interval` now takes milliseconds**, not seconds. The old
+  `--interval 3` meant 3 seconds; use `--interval 3000`. The minimum is
+  `100` and the default is `500`.
+- **`refreshInterval` config is now honoured** (in milliseconds) and is
+  used whenever `--interval` is omitted; its default changed from `3`
+  to `500`.
+- **`--data-dir` is authoritative**: pointing it at a directory without
+  `sessions.db` now fails with a clear error instead of silently
+  falling back to the auto-detected database.
+- **`compare --mode` rejects unknown values** instead of silently
+  treating them as `custom`.
+- `export` accepts an optional report type (`export weekly --format
+  csv`); running it with no argument is unchanged.
+- Sub-agent durations are capped at the session lifetime, so bogus
+  multi-year values no longer appear.
 
 ## Responsive TUI
 

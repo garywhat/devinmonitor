@@ -140,6 +140,13 @@ func (r *v1Reader) Sessions() ([]model.Session, error) {
 		}
 		s.CreditCost = sm.TotalCreditCost
 		s.ACUCost = sm.TotalACUCost
+		// Skip hidden/deleted sessions so every consumer of Sessions() sees
+		// consistent totals and lists. This matches FilteredSessions and
+		// SessionCount, which already exclude hidden rows. Direct lookup via
+		// Session(id) still returns a hidden session when requested by exact ID.
+		if s.Hidden {
+			continue
+		}
 		out = append(out, s)
 	}
 	if err := rows.Err(); err != nil {
@@ -208,7 +215,9 @@ func (r *v1Reader) loadMessages(sessionID string) ([]model.Message, error) {
 		if err := rows.Scan(&m.NodeID, &raw, &createdAt); err != nil {
 			return nil, fmt.Errorf("scan message: %w", err)
 		}
-		// created_at in message_nodes is nanoseconds since epoch (Rust SystemTime).
+		// created_at in message_nodes is seconds since epoch (matches the
+		// sessions table). The tsToTime helper in extensions.go handles other
+		// tables' timestamps that may be stored in seconds/ms/ns.
 		m.CreatedAt = time.Unix(createdAt, 0)
 
 		var cm chatMessage
@@ -335,7 +344,13 @@ func aggregate(s *model.Session) {
 				if sa != nil {
 					if aid, ok := toolCallIDToAgentID[tc.ID]; ok {
 						sa.AgentID = aid
-						if comp, ok := completions[aid]; ok {
+						if comp, ok := completions[aid]; ok && !comp.endTime.IsZero() {
+							// Only treat the subagent as completed when the
+							// completion notification carries a real timestamp.
+							// A zero/missing created_at yields a ~1970 end time
+							// and a huge negative pseudo-duration, which is why
+							// some subagents previously showed nonsense "-" or
+							// -496k-hour artifacts.
 							sa.HasCompletion = true
 							sa.EndTime = comp.endTime
 							sa.OutputLen = comp.outputLen

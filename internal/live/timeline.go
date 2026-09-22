@@ -2,6 +2,7 @@ package live
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -43,11 +44,11 @@ type timelineModel struct {
 func newTimelineModel(s *model.Session) timelineModel {
 	msgs := make([]model.Message, len(s.Messages))
 	copy(msgs, s.Messages)
-	for i := 1; i < len(msgs); i++ {
-		for j := i; j > 0 && msgs[j].CreatedAt.Before(msgs[j-1].CreatedAt); j-- {
-			msgs[j], msgs[j-1] = msgs[j-1], msgs[j]
-		}
-	}
+	// Sort by creation time. This used to be a hand-written insertion sort:
+	// O(n²) meant a session with tens of thousands of messages froze the UI.
+	sort.SliceStable(msgs, func(i, j int) bool {
+		return msgs[i].CreatedAt.Before(msgs[j].CreatedAt)
+	})
 	return timelineModel{session: s, messages: msgs}
 }
 
@@ -259,12 +260,11 @@ func RenderLogTail(ss []model.Session, width, height int) string {
 		}
 	}
 
-	// Sort by timestamp descending (newest first).
-	for i := 1; i < len(entries); i++ {
-		for j := i; j > 0 && entries[j].msg.CreatedAt.After(entries[j-1].msg.CreatedAt); j-- {
-			entries[j], entries[j-1] = entries[j-1], entries[j]
-		}
-	}
+	// Sort by timestamp descending (newest first). Again: O(n log n), not the
+	// O(n²) insertion sort that pinned the CPU on large histories.
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].msg.CreatedAt.After(entries[j].msg.CreatedAt)
+	})
 
 	// Take the most recent N that fit.
 	maxLines := height - 3

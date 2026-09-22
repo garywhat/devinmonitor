@@ -59,6 +59,22 @@ type model_ struct {
 
 type tickMsg time.Time
 
+// MinIntervalMs is the minimum polling interval in milliseconds. The live
+// poller refuses to go below it (to avoid CPU/disk churn on the whole-DB
+// reload each tick), and the --interval flag validates against the same value
+// so the requested and effective intervals always match.
+const MinIntervalMs = 100
+
+// intervalDur converts a millisecond polling interval to a duration,
+// flooring very small values to MinIntervalMs to avoid a 0/negative interval
+// (which would spin the poll loop hot or drop to the tea.Tick default).
+func intervalDur(intervalMs int) time.Duration {
+	if intervalMs < MinIntervalMs {
+		return time.Duration(MinIntervalMs) * time.Millisecond
+	}
+	return time.Duration(intervalMs) * time.Millisecond
+}
+
 func tick(interval time.Duration) tea.Cmd {
 	return tea.Tick(interval, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
@@ -76,19 +92,19 @@ func poll(r reader.Reader) tea.Cmd {
 }
 
 // Run starts the live dashboard.
-func Run(dataDir string, intervalSec int) error {
+// intervalMs is the polling interval in milliseconds (default 500).
+func Run(dataDir string, intervalMs int) error {
 	r, err := reader.Open(dataDir)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
+	// Use the incremental LiveReader so frequent polls don't re-load the full
+	// message history of every session on each tick (see reader/live.go).
 	m := model_{
-		reader:   r,
-		interval: time.Duration(intervalSec) * time.Second,
+		reader:   reader.NewLiveReader(r),
+		interval: intervalDur(intervalMs),
 		loading:  true,
-	}
-	if m.interval < 1*time.Second {
-		m.interval = 3 * time.Second
 	}
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err = p.Run()
@@ -446,16 +462,14 @@ func labelValue(label, value string, labelW int) string {
 
 // rollingOutputRate computes aggregate output rate over a rolling time window.
 // Devin issues concurrent requests, so a single request's tokens_per_sec
-// understates true throughput. This function finds all unique assistant
-// requests that completed within the last `window` duration and sums their
-// individual tokens_per_sec — naturally accounting for concurrency.
-//
-// Devin stores each request twice (streaming + final) with the same request_id,
-// so we deduplicate by request_id to avoid double-counting.
+// understates true throughput. We sum the output_tokens of all unique
+// requests that completed within the last `window` and divide by the actual
+// span those completions covered — an aggregate rate that accounts for
+// concurrency (and does not overstate sequential requests).
 func rollingOutputRate(s *model.Session, window time.Duration) float64 {
 	type evt struct {
 		endTime time.Time
-		tps     float64
+		outTok  int64
 	}
 	seen := map[string]bool{}
 	var events []evt
@@ -475,28 +489,44 @@ func rollingOutputRate(s *model.Session, window time.Duration) float64 {
 			seen[msg.RequestID] = true
 		}
 		end := msg.CreatedAt.Add(time.Duration(m.TotalTimeMs * float64(time.Millisecond)))
-		events = append(events, evt{end, m.TokensPerSec})
+		events = append(events, evt{end, m.OutputTokens})
 	}
 	if len(events) == 0 {
 		return 0
 	}
-	// Find the latest completion time.
+	// Keep only requests that completed within the trailing window, window
+	// anchored to the latest completion.
 	var latest time.Time
 	for _, e := range events {
 		if e.endTime.After(latest) {
 			latest = e.endTime
 		}
 	}
-	// Sum tokens_per_sec of all requests completed within the window.
-	// This gives the aggregate concurrent throughput.
 	windowStart := latest.Add(-window)
-	var sum float64
+	var earliest, latestIn time.Time
+	var outTok int64
 	for _, e := range events {
-		if !e.endTime.Before(windowStart) {
-			sum += e.tps
+		if e.endTime.Before(windowStart) {
+			continue
+		}
+		outTok += e.outTok
+		if earliest.IsZero() || e.endTime.Before(earliest) {
+			earliest = e.endTime
+		}
+		if e.endTime.After(latestIn) {
+			latestIn = e.endTime
 		}
 	}
-	return sum
+	if outTok == 0 {
+		return 0
+	}
+	// Divide by the actual span covered by the in-window completions so the
+	// rate reflects real throughput (not N× for sequential requests).
+	span := latestIn.Sub(earliest)
+	if span <= 0 {
+		return 0
+	}
+	return float64(outTok) / span.Seconds()
 }
 
 func (m model_) renderTokens(s *model.Session, w int) string {

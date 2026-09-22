@@ -26,7 +26,7 @@ type Config struct {
 	NoHeader      bool   `json:"noHeader"`
 
 	// Refresh
-	RefreshInterval int `json:"refreshInterval"` // seconds
+	RefreshInterval int `json:"refreshInterval"` // milliseconds (see live.MinIntervalMs)
 	RefreshHz       float64 `json:"refreshHz"`   // display refresh rate
 
 	// Budget
@@ -105,7 +105,7 @@ func Load() *Config {
 		Locale:         "en",
 		TimeFormat:     "auto",
 		Timezone:       "auto",
-		RefreshInterval: 3,
+		RefreshInterval: 500,
 		RefreshHz:      1.0,
 		Currency:       "USD",
 		Plan:           "none",

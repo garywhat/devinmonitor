@@ -12,7 +12,7 @@ DevinMonitor 读取 Devin CLI 的本地会话数据库，提供实时监控、
 
 ## 实时面板
 
-`live` 命令渲染一个实时 bubbletea TUI，每隔几秒轮询一次
+`live` 命令渲染一个实时 bubbletea TUI，默认每 500 毫秒轮询一次
 `sessions.db`，完整展示当前会话的全景视图：
 
 ![实时面板](docs/images/live_dashboard_zh.png)
@@ -30,6 +30,13 @@ DevinMonitor 读取 Devin CLI 的本地会话数据库，提供实时监控、
 - **Latency** — TTFT / 总时 / tok/s 百分位和 finish-reason 分布条。
 - **Tools** — 各工具调用次数及横向条形图，包含 `run_subagent`
   和 `read_subagent` 调用。
+
+轮询是增量的：首次加载后只重新读取消息数发生变化的会话，因此即使
+在拥有数万条消息的数据库上，短间隔刷新依然轻量。
+
+**`--interval`** 以**毫秒**设置刷新间隔（默认 `500`，最小 `100`）。
+未显式传入该参数时使用配置项 `refreshInterval`；显式传入的 flag
+始终优先。扩展面板（`--light` / `--once` / `--theme`）使用同一间隔。
 
 ## 报表
 
@@ -88,6 +95,49 @@ p50/p95 TTFT 和总时、截断率，以及该模型的各工具明细。
 
 ![子代理统计](docs/images/agents_zh.png)
 
+### `export [report_type]` — 机器可读报表
+
+`export` 把任意报表以四种格式写入文件或标准输出，报表类型可省略
+（默认 `sessions`）：
+
+```bash
+devinmonitor export                       # sessions，完整 JSON（schema 1）
+devinmonitor export daily --format csv
+devinmonitor export weekly --format markdown --output weekly.md
+devinmonitor export models --format html  > models.html
+devinmonitor export projects --format json
+```
+
+| 报表类型 | 内容 |
+|---|---|
+| `sessions`（默认） | 完整标准化文档（`export_schema: 1`），格式稳定，适合上传 Web |
+| `daily` / `weekly` / `monthly` | 时间分桶，含成本、token、请求数、缓存命中率 |
+| `models` | 各模型总量、成本、TTFT 与吞吐百分位 |
+| `projects` | 按工作目录聚合的项目用量 |
+| `agents` | 按 profile 分组的子代理用量 |
+
+格式：`csv`、`markdown`、`html`、`json`。报表类型或格式非法时以
+非零退出并给出用法提示。`--detailed` 仍会在 `sessions` 文档中内嵌
+逐请求明细。
+
+## MCP 服务
+
+`devinmonitor mcp` 以 stdio 运行 Model Context Protocol 服务，让
+MCP 客户端（Claude Desktop、Cursor 等）直接查询本地用量数据。它
+同时支持两种 stdio 帧格式——规范要求的 `Content-Length` 帧与纯
+换行分隔 JSON——并支持 JSON-RPC 批量请求、通知与 `ping`。
+
+暴露的工具：`get_sessions`、`get_session`、`get_cost_summary`、
+`get_alerts`。
+
+```json
+{
+  "mcpServers": {
+    "devinmonitor": { "command": "devinmonitor", "args": ["mcp"] }
+  }
+}
+```
+
 ## 安装
 
 ```bash
@@ -108,6 +158,9 @@ go build -o devinmonitor .
 ```bash
 # 实时面板（需要 TTY）
 devinmonitor live
+
+# 更快刷新：200 毫秒（毫秒为单位，最小 100）
+devinmonitor live --interval 200
 
 # 会话列表
 devinmonitor sessions
@@ -141,6 +194,12 @@ devinmonitor metrics --addr :9101
 
 # 导出标准化 JSON
 devinmonitor export --detailed > usage.json
+
+# 导出指定报表类型：sessions|daily|weekly|monthly|models|projects|agents
+devinmonitor export weekly --format markdown --output weekly.md
+
+# MCP 服务（stdio，供 Claude Desktop / Cursor 使用）
+devinmonitor mcp
 ```
 
 ### 全局参数
@@ -158,6 +217,33 @@ r          切换到下一个会话
 1-4 / Tab  跳转到分区（紧凑模式）
 L          切换语言（en <-> zh）
 ```
+
+扩展面板（`--light` / `--theme`）额外支持：
+
+```
+s          设置面板（主题、refreshInterval、预算、货币）
+?          帮助浮层
+Ctrl+P     命令面板
+Enter      会话详情弹窗
+m          模型分解弹窗
+|          分屏（列表 + 详情）
+v          列表 / 卡片视图切换
+t          切换时间窗口（今天 / 本周 / 本月 / 全部）
+l          实时日志尾部（最近消息）
+```
+
+## 升级说明 — v0.3.0
+
+- **`live --interval` 单位改为毫秒**（原为秒）。旧的 `--interval 3`
+  表示 3 秒，请改用 `--interval 3000`。最小值为 `100`，默认 `500`。
+- **`refreshInterval` 配置项现在真正生效**（毫秒），在未传入
+  `--interval` 时使用；其默认值由 `3` 改为 `500`。
+- **`--data-dir` 成为权威路径**：指向不含 `sessions.db` 的目录时
+  会明确报错退出，不再静默回退到自动探测的数据库。
+- **`compare --mode` 拒绝非法值**，不再静默当作 `custom` 处理。
+- `export` 支持可选报表类型（`export weekly --format csv`）；不带
+  参数运行的行为保持不变。
+- 子代理时长以会话生命周期为上限，不再出现荒谬的多年数值。
 
 ## 响应式 TUI
 

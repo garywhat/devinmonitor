@@ -69,7 +69,7 @@ var cmdConfig = func() *cobra.Command {
 			cfg.Locale = "en"
 			cfg.TimeFormat = "auto"
 			cfg.Timezone = "auto"
-			cfg.RefreshInterval = 3
+			cfg.RefreshInterval = 500
 			cfg.RefreshHz = 1.0
 			cfg.Currency = "USD"
 			cfg.Plan = "none"
@@ -127,6 +127,9 @@ func setConfigKey(cfg *config.Config, key, val string) error {
 		cfg.NoHeader = b
 	case "refreshinterval":
 		n, _ := strconv.Atoi(val)
+		if n < 100 {
+			n = 100 // keep in sync with live.MinIntervalMs
+		}
 		cfg.RefreshInterval = n
 	case "refreshhz":
 		f, _ := strconv.ParseFloat(val, 64)

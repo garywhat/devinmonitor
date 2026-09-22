@@ -2,10 +2,12 @@ package integration
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -60,33 +62,142 @@ type mcpTool struct {
 }
 
 // runMCPServer implements a minimal MCP server over stdio using JSON-RPC 2.0.
+//
+// It accepts both stdio framings:
+//   - the MCP spec's `Content-Length: N\r\n\r\n<body>` framing, which real MCP
+//     clients (Claude Desktop, Cursor, VS Code, ...) send, and
+//   - bare newline-delimited JSON (one message per line) for convenience.
+//
+// Previously only the latter was handled, so a spec-framed request first had
+// its `Content-Length: N` header parsed as a JSON message, emitting a spurious
+// `-32700 Parse error` response before the real one.
 func runMCPServer(cmd *cobra.Command) {
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024) // 10MB max
+	reader := bufio.NewReader(os.Stdin)
 	encoder := json.NewEncoder(os.Stdout)
 
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
+	dispatch := func(body []byte) {
+		body = bytes.TrimSpace(body)
+		if len(body) == 0 {
+			return
 		}
-		var req rpcRequest
-		if err := json.Unmarshal([]byte(line), &req); err != nil {
-			encoder.Encode(rpcResponse{
+		parseError := func() {
+			_ = encoder.Encode(rpcResponse{
 				JSONRPC: "2.0",
 				ID:      nil,
 				Error:   &rpcError{Code: -32700, Message: "Parse error"},
 			})
+		}
+
+		// Batch request: a JSON array of messages. Responses are collected
+		// into a single array, omitting notifications (which have none).
+		if body[0] == '[' {
+			var batch []json.RawMessage
+			if err := json.Unmarshal(body, &batch); err != nil || len(batch) == 0 {
+				parseError()
+				return
+			}
+			out := make([]*rpcResponse, 0, len(batch))
+			for _, raw := range batch {
+				var req rpcRequest
+				if err := json.Unmarshal(raw, &req); err != nil {
+					out = append(out, &rpcResponse{
+						JSONRPC: "2.0",
+						ID:      nil,
+						Error:   &rpcError{Code: -32700, Message: "Parse error"},
+					})
+					continue
+				}
+				if resp := handleMCPRequest(cmd, &req); resp != nil {
+					out = append(out, resp)
+				}
+			}
+			if len(out) > 0 {
+				_ = encoder.Encode(out)
+			}
+			return
+		}
+
+		var req rpcRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			parseError()
+			return
+		}
+		if resp := handleMCPRequest(cmd, &req); resp != nil {
+			_ = encoder.Encode(resp)
+		}
+	}
+
+	for {
+		line, err := reader.ReadString('\n')
+		if line == "" {
+			if err != nil {
+				return // EOF with nothing buffered.
+			}
 			continue
 		}
-		resp := handleMCPRequest(cmd, &req)
-		if resp != nil {
-			_ = encoder.Encode(resp)
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			if err != nil {
+				return
+			}
+			continue
+		}
+
+		if n, ok := contentLengthHeader(trimmed); ok {
+			// Skip any remaining headers up to the blank separator line.
+			for {
+				h, herr := reader.ReadString('\n')
+				if strings.TrimSpace(h) == "" || herr != nil {
+					break
+				}
+			}
+			if n > 0 {
+				body := make([]byte, n)
+				if _, rerr := io.ReadFull(reader, body); rerr != nil {
+					return // truncated frame
+				}
+				dispatch(body)
+			}
+			if err != nil {
+				return
+			}
+			continue
+		}
+
+		// Bare newline-delimited JSON message.
+		dispatch([]byte(trimmed))
+		if err != nil {
+			return
 		}
 	}
 }
 
+// contentLengthHeader parses a `Content-Length: N` header line (header name
+// matched case-insensitively). ok is false when the line is not that header.
+func contentLengthHeader(line string) (int, bool) {
+	i := strings.IndexByte(line, ':')
+	if i < 0 {
+		return 0, false
+	}
+	if !strings.EqualFold(strings.TrimSpace(line[:i]), "Content-Length") {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(line[i+1:]))
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
+}
+
 func handleMCPRequest(cmd *cobra.Command, req *rpcRequest) *rpcResponse {
+	// JSON-RPC 2.0: a message without an `id` is a notification and MUST NOT
+	// receive a response — not even for an unknown method. Replying with an
+	// error (as the default branch used to) makes real MCP clients receive
+	// spurious responses for e.g. `notifications/cancelled`.
+	if len(req.ID) == 0 {
+		return nil
+	}
+
 	switch req.Method {
 	case "initialize":
 		return &rpcResponse{
@@ -108,12 +219,20 @@ func handleMCPRequest(cmd *cobra.Command, req *rpcRequest) *rpcResponse {
 		// Notification — no response.
 		return nil
 
+	case "ping":
+		// Liveness check; the spec returns an empty result object.
+		return &rpcResponse{
+			JSONRPC: "2.0",
+			ID:      rawToInterface(req.ID),
+			Result:  map[string]interface{}{},
+		}
+
 	case "tools/list":
 		return &rpcResponse{
 			JSONRPC: "2.0",
 			ID:      rawToInterface(req.ID),
 			Result: map[string]interface{}{
-				"tools:": mcpTools(),
+				"tools": mcpTools(),
 			},
 		}
 

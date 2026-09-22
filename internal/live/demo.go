@@ -21,7 +21,8 @@ type RunOptions struct {
 
 // RunLiveExt starts the extended live TUI with the given options.
 // This is the entry point for `live-ext --demo`, `--once`, `--light`.
-func RunLiveExt(dataDir string, intervalSec int, opts RunOptions) error {
+// intervalMs is the polling interval in milliseconds (default 500).
+func RunLiveExt(dataDir string, intervalMs int, opts RunOptions) error {
 	// Apply theme.
 	if opts.Theme != "" {
 		ApplyTheme(GetTheme(opts.Theme))
@@ -30,7 +31,7 @@ func RunLiveExt(dataDir string, intervalSec int, opts RunOptions) error {
 	}
 
 	if opts.Demo {
-		return runDemo(opts)
+		return runDemo(opts, intervalMs)
 	}
 
 	// Normal mode: use the extended model with real data.
@@ -38,17 +39,18 @@ func RunLiveExt(dataDir string, intervalSec int, opts RunOptions) error {
 		return runOnce(dataDir, opts)
 	}
 	if opts.Light {
-		return runLight(dataDir, intervalSec)
+		return runLight(dataDir, intervalMs)
 	}
 
 	// Full extended live mode.
-	return runExtLive(dataDir, intervalSec)
+	return runExtLive(dataDir, intervalMs)
 }
 
 // runDemo runs the TUI with synthetic demo data.
-func runDemo(opts RunOptions) error {
+func runDemo(opts RunOptions, intervalMs int) error {
 	ss := GenerateDemoSessions()
 	m := newExtModelWithSessions(ss, opts.Light)
+	m.interval = intervalDur(intervalMs)
 	if opts.Once {
 		// Render one frame and print to stdout.
 		w := opts.Width
@@ -59,7 +61,9 @@ func runDemo(opts RunOptions) error {
 		if h == 0 {
 			h = 30
 		}
+		// Set both outer and inner sizes so the dashboard renders (not a placeholder).
 		m.width, m.height = w, h
+		m.inner.width, m.inner.height = w, h
 		fmt.Print(m.View())
 		return nil
 	}
@@ -88,32 +92,34 @@ func runOnce(dataDir string, opts RunOptions) error {
 	if h == 0 {
 		h = 30
 	}
+	// Set both outer and inner sizes so the dashboard renders (not a placeholder).
 	m.width, m.height = w, h
+	m.inner.width, m.inner.height = w, h
 	fmt.Print(m.View())
 	return nil
 }
 
 // runLight runs the extended live TUI in light mode (minimal rendering).
-func runLight(dataDir string, intervalSec int) error {
+func runLight(dataDir string, intervalMs int) error {
 	r, err := openReaderForExt(dataDir)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
-	m := newExtModel(r, intervalSec, true)
+	m := newExtModel(r, intervalMs, true)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err = p.Run()
 	return err
 }
 
 // runExtLive runs the full extended live TUI.
-func runExtLive(dataDir string, intervalSec int) error {
+func runExtLive(dataDir string, intervalMs int) error {
 	r, err := openReaderForExt(dataDir)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
-	m := newExtModel(r, intervalSec, false)
+	m := newExtModel(r, intervalMs, false)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err = p.Run()
 	return err

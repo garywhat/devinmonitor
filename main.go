@@ -2,18 +2,18 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/garywhat/devinmonitor/internal/cli"
-	"github.com/garywhat/devinmonitor/internal/export"
+	"github.com/garywhat/devinmonitor/internal/config"
 	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/live"
 	"github.com/garywhat/devinmonitor/internal/model"
@@ -37,13 +37,42 @@ var (
 	flagBreakdown bool
 	flagStartDay  string
 	flagInterval  int
-	flagDetailed  bool
 
 	// version is injected at build time via ldflags:
 	//   -ldflags "-X main.version=v0.1.0"
 	// Defaults to "dev" when running `go run` or `go build` without ldflags.
 	version = "dev"
 )
+
+// minIntValue is a pflag.Value for an integer flag that rejects values below
+// `min`. It enforces the same floor as the live poller (live.MinIntervalMs) so
+// the requested --interval never diverges from the effective refresh interval.
+type minIntValue struct {
+	dst *int
+	min int
+	def int
+}
+
+func (m *minIntValue) String() string {
+	if m.dst == nil {
+		return fmt.Sprintf("%d", m.def)
+	}
+	return fmt.Sprintf("%d", *m.dst)
+}
+
+func (m *minIntValue) Set(s string) error {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return err
+	}
+	if n < m.min {
+		return fmt.Errorf("--interval must be >= %dms (got %d)", m.min, n)
+	}
+	*m.dst = n
+	return nil
+}
+
+func (m *minIntValue) Type() string { return "int" }
 
 func main() {
 	if err := i18n.Init(); err != nil {
@@ -207,6 +236,15 @@ func cmdLive() *cobra.Command {
 		Use:   "live",
 		Short: i18n.T("cmd.live"),
 		Run: func(cmd *cobra.Command, args []string) {
+			// The `refreshInterval` config value (milliseconds) is the default
+			// when --interval is not passed explicitly, so the "Refresh
+			// Interval" preference actually takes effect.
+			interval := flagInterval
+			if !cmd.Flags().Changed("interval") {
+				if cfg := config.Global(); cfg != nil && cfg.RefreshInterval > 0 {
+					interval = cfg.RefreshInterval
+				}
+			}
 			// If any extended flags are set, use RunLiveExt; otherwise use the
 			// original Run for backward compatibility.
 			if demo || once || light || theme != "" {
@@ -216,19 +254,23 @@ func cmdLive() *cobra.Command {
 					Light: light,
 					Theme: theme,
 				}
-				if err := live.RunLiveExt(flagDataDir, flagInterval, opts); err != nil {
+				if err := live.RunLiveExt(flagDataDir, interval, opts); err != nil {
 					fmt.Fprintf(os.Stderr, "%v\n", err)
 					os.Exit(1)
 				}
 				return
 			}
-			if err := live.Run(flagDataDir, flagInterval); err != nil {
+			if err := live.Run(flagDataDir, interval); err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
 		},
 	}
-	c.Flags().IntVar(&flagInterval, "interval", 3, i18n.T("help.interval"))
+	c.Flags().Var(
+		&minIntValue{dst: &flagInterval, min: live.MinIntervalMs, def: 500},
+		"interval",
+		i18n.T("help.interval"),
+	)
 	c.Flags().BoolVar(&demo, "demo", false, "run with synthetic demo data (no database needed)")
 	c.Flags().BoolVar(&once, "once", false, "render one frame and exit (non-interactive)")
 	c.Flags().BoolVar(&light, "light", false, "minimal rendering for slow terminals")
@@ -1196,33 +1238,6 @@ func exportMetrics(ss []model.Session, addr string) {
 		fmt.Fprintf(os.Stderr, "metrics server error: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-// ---- export ----
-
-func cmdExport() *cobra.Command {
-	c := &cobra.Command{
-		Use:   "export",
-		Short: i18n.T("cmd.export"),
-		Run: func(cmd *cobra.Command, args []string) {
-			r := openReader()
-			defer r.Close()
-			ss, err := r.Sessions()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "%v\n", err)
-				os.Exit(1)
-			}
-			doc := export.BuildDocument(ss, flagDetailed)
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(doc); err != nil {
-				fmt.Fprintf(os.Stderr, "%s\n", i18n.T("err.exportFail", map[string]interface{}{"Err": err.Error()}))
-				os.Exit(1)
-			}
-		},
-	}
-	c.Flags().BoolVar(&flagDetailed, "detailed", false, "include per-request detail")
-	return c
 }
 
 // ---- version ----

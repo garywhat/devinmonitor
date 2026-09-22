@@ -218,7 +218,14 @@ var cmdNotify = func() *cobra.Command {
 				fmt.Println("No alerts to notify.")
 				return
 			}
-			sent := 0
+			// Without any channel configured nothing is sent; say so instead of
+			// reporting a bogus "Sent N notification(s)".
+			if !cfg.NotifyDesktop && cfg.NotifyWebhook == "" {
+				fmt.Printf("%d alert(s) found, but no notification channel is configured.\n", len(alerts))
+				fmt.Println("Enable one with: config set notifyDesktop true  (or: config set notifyWebhook <url>)")
+				return
+			}
+			sent, failed := 0, 0
 			for _, a := range alerts {
 				n := model.Notification{
 					Title:   fmt.Sprintf("DevinMonitor Alert: %s", a.Kind),
@@ -226,14 +233,27 @@ var cmdNotify = func() *cobra.Command {
 					Level:   a.Severity,
 				}
 				if cfg.NotifyDesktop {
-					_ = sendDesktopNotification(n)
+					if err := sendDesktopNotification(n); err != nil {
+						fmt.Fprintf(os.Stderr, "desktop notification failed: %v\n", err)
+						failed++
+					} else {
+						sent++
+					}
 				}
 				if cfg.NotifyWebhook != "" {
-					_ = sendWebhook(cfg.NotifyWebhook, n)
+					if err := sendWebhook(cfg.NotifyWebhook, n); err != nil {
+						fmt.Fprintf(os.Stderr, "webhook notification failed: %v\n", err)
+						failed++
+					} else {
+						sent++
+					}
 				}
-				sent++
 			}
-			fmt.Printf("Sent %d notification(s).\n", sent)
+			fmt.Printf("Sent %d notification(s).", sent)
+			if failed > 0 {
+				fmt.Printf(" %d failed.", failed)
+			}
+			fmt.Println()
 		},
 	}
 	c.Flags().BoolVar(&test, "test", false, "send a test notification")

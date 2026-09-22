@@ -108,16 +108,31 @@ type ModelStats struct {
 }
 
 // Percentile returns the p-th percentile (0-100) of xs. Returns 0 if empty.
+//
+// Uses linear-interpolation-between-closest-ranks (the "rank" method familiar
+// from numpy's default), which is well-behaved on small samples: for 2 samples
+// p95 lands near the larger value instead of collapsing to the minimum that a
+// nearest-rank `int((n-1)*p/100)` index would produce.
 func Percentile(xs []float64, p float64) float64 {
 	if len(xs) == 0 {
 		return 0
 	}
-	// Simple sort-based percentile. xs is copied to avoid mutation.
+	if len(xs) == 1 {
+		return xs[0]
+	}
+	// Sort a copy; the input is left untouched.
 	sorted := make([]float64, len(xs))
 	copy(sorted, xs)
 	sortFloats(sorted)
-	idx := int(float64(len(sorted)-1) * p / 100.0)
-	return sorted[idx]
+	// Rank r in [0, n-1].
+	r := (p / 100.0) * float64(len(sorted)-1)
+	lo := int(r)
+	hi := lo + 1
+	if lo >= len(sorted)-1 {
+		return sorted[len(sorted)-1]
+	}
+	frac := r - float64(lo)
+	return sorted[lo] + frac*(sorted[hi]-sorted[lo])
 }
 
 func sortFloats(a []float64) {

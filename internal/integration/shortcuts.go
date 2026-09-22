@@ -34,7 +34,7 @@ func printPeriodRows(rows []report.TimeRow, labelHeader string) {
 		i18n.T("common.cost"),
 	).RightAlign(1, 2, 3, 4, 5, 6)
 	var totReq, totSess int
-	var totIn, totOut, totCR int64
+	var totIn, totOut, totCR, totCW int64
 	var totCost float64
 	for _, row := range rows {
 		costStr := report.FormatCost(row.Cost, false)
@@ -56,6 +56,7 @@ func printPeriodRows(rows []report.TimeRow, labelHeader string) {
 		totIn += row.InputTok
 		totOut += row.OutputTok
 		totCR += row.CacheRead
+		totCW += row.CacheWrite
 		totCost += row.Cost
 	}
 	t.TotalRow(
@@ -65,7 +66,7 @@ func printPeriodRows(rows []report.TimeRow, labelHeader string) {
 		report.FormatTok(totIn),
 		report.FormatTok(totOut),
 		report.FormatTok(totCR),
-		report.FormatTok(totIn+totOut+totCR),
+		report.FormatTok(totIn+totOut+totCR+totCW),
 		report.FormatCost(totCost, false),
 	)
 	fmt.Println(t.String())
@@ -467,11 +468,9 @@ func sortedModelNames(m map[string]*model.ModelStats) []string {
 	for k := range m {
 		out = append(out, k)
 	}
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && m[out[j]].InputTokens > m[out[j-1]].InputTokens; j-- {
-			out[j], out[j-1] = out[j-1], out[j]
-		}
-	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return m[out[i]].InputTokens > m[out[j]].InputTokens
+	})
 	return out
 }
 
