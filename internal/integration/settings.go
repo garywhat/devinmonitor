@@ -448,6 +448,19 @@ var cmdPricing = func() *cobra.Command {
 				} else {
 					fmt.Println(table)
 				}
+				// The fetched catalogue can hold hundreds of models, so it is
+				// summarised rather than listed: what the user needs to know is
+				// that it is in effect, above the built-in table but below their
+				// own overrides.
+				if c, err := pricing.LoadCache(pricing.CachePath()); err == nil && c != nil && len(c.Models) > 0 {
+					state := "fresh"
+					if pricing.NeedsRefresh(c, pricing.DefaultCacheTTL, time.Now()) {
+						state = "stale"
+					}
+					fmt.Printf("\nFetched catalogue (lower precedence than the entries above):\n")
+					fmt.Printf("  %d models from %s, fetched %s (%s)\n", len(c.Models), c.Source, c.FetchedAt, state)
+					fmt.Printf("  %s\n", pricing.CachePath())
+				}
 			case "set":
 				if len(args) < 2 {
 					fmt.Fprintln(os.Stderr, "usage: pricing set <model> --input <usd> --output <usd> [--cache-read <usd>] [--cache-write <usd>] [--free]")

@@ -240,12 +240,25 @@ since been fixed are kept with their resolution so the reasoning is not lost.
    resources' own `padRight`/`padLeft`/`truncateRunes` were rune-count based, so
    any CJK label shifted every column after it. They now delegate to
    `ui.PadRight`/`ui.PadLeft`/`ui.Truncate`.
-4. **Layout geometry is still re-derived per surface.** Panel heights, column
-   widths and card layout are computed independently in `internal/live/live.go`,
-   `internal/live/settings.go` and `internal/trends`. The truncation helpers are
-   shared now, but a shared layout primitive is the real fix and is deliberately
-   deferred: it is a refactor of working, user-visible code with no current
-   defect driving it.
+4. ~~**Layout geometry is re-derived per surface.**~~ **Corrected and fixed.**
+   The original claim was wrong. It came from a static audit that counted
+   anything named width/height in three packages, but `internal/trends`
+   computes bar heights inside an ASCII chart (`v / max * height`) — data-to-
+   glyph scaling, not layout — and the extended dashboard does not re-derive
+   the breakpoints at all; it delegates to the same `View()`. Unifying those
+   would have been a forced abstraction in two different problems.
+
+   What the audit had noticed, vaguely, was real: measuring the renderers
+   across every tier showed the **tiers do not fit the terminal they are given**.
+   At 80x12 the compact tier rendered 20 lines in 93 columns, and the tiny tier
+   rendered 54 columns into 40. Height overflow merely loses lines, because
+   bubbletea drops them from the top of an over-tall frame, but width overflow
+   wraps and tears the box drawing apart — and 80x12 is an ordinary tmux split.
+   `fitToTerminal` now clamps every tier in one place as `View()` returns,
+   reserving one column for the autowrap guard and truncating by display width
+   so a CJK glyph is never cut in half. A matrix test asserts, for every tier and
+   both sides of both breakpoints, that no frame exceeds its terminal.
+
 5. **Error classification recall, and why keywords do not solve it.**
    Measured against a real database (621 tool-role, error-looking, short
    messages), the table classified 58.8% of them; categories for file reads,

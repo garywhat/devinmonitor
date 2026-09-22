@@ -205,7 +205,20 @@ func (m model_) View() string {
 		return i18n.T("dash.header.session") + "..."
 	}
 
-	// Pick breakpoint tier.
+	// Pick breakpoint tier, then force the result to fit.
+	//
+	// The tiers each budget their own space, and measurements showed they do
+	// not all succeed: at 80x12 the compact tier rendered 20 lines in 93
+	// columns (the terminal is 80x12), and the tiny tier rendered 54 columns
+	// into 40. Height overflow is survivable because bubbletea drops lines from
+	// the top of an over-tall frame, but WIDTH overflow is not: a long line
+	// wraps and the box drawing tears apart. Clamping once, here, is the single
+	// place every tier passes through.
+	return fitToTerminal(m.renderTier(), m.width, m.height)
+}
+
+// renderTier picks the layout tier for the current size and renders it.
+func (m model_) renderTier() string {
 	switch {
 	case m.width >= bpFull && m.height >= 28:
 		return m.viewFull()
@@ -216,6 +229,30 @@ func (m model_) View() string {
 	default:
 		return m.viewMini()
 	}
+}
+
+// fitToTerminal clamps a rendered frame to the terminal it is drawn into.
+//
+// One column is reserved, because content that exactly fills the width can
+// trigger the autowrap bug in some terminals where the last column is
+// overwritten. Truncation uses the display-width-aware ui.Truncate, so a CJK
+// label is cut on a character boundary rather than mid-glyph.
+func fitToTerminal(frame string, width, height int) string {
+	if width <= 0 || frame == "" {
+		return frame
+	}
+	contentW := width - 1
+	if contentW < 1 {
+		contentW = 1
+	}
+	lines := strings.Split(frame, "\n")
+	if height > 0 && len(lines) > height {
+		lines = lines[:height]
+	}
+	for i, l := range lines {
+		lines[i] = ui.Truncate(l, contentW)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // ---- Full layout (>=120 cols, >=28 rows) ----
