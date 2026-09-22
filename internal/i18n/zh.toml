@@ -288,6 +288,10 @@ pricingSchema = "打印 JSON Schema 地址与本地覆盖文件路径"
 pricingFree = "将该模型标记为免费（不归属任何成本）"
 pricingFile = "覆盖文件路径（默认：<配置目录>/pricing.json）"
 
+pricingFetch = "下载价格目录并缓存，供离线使用"
+pricingSource = "目录地址（默认使用内置公共源）"
+pricingForce = "即使缓存仍新鲜也强制重新拉取"
+
 [block]
 statusActive = "活跃"
 statusDone   = "已完成"

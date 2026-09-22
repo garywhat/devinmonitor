@@ -42,6 +42,9 @@ type Config struct {
 	Plan         string  `json:"plan"`         // none, custom
 	PlanMonthly  float64 `json:"planMonthly"`  // monthly plan cost in USD
 	PlanACULimit float64 `json:"planACULimit"` // monthly ACU limit
+	// PricingAutoFetch enables refreshing the price catalogue from the network.
+	// Off by default: the tool is local-first and must never reach out unasked.
+	PricingAutoFetch bool `json:"pricingAutoFetch"`
 
 	// Reset
 	ResetHour int `json:"resetHour"` // 0-23, daily reset hour

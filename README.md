@@ -333,6 +333,23 @@ source is ever added it must **write** into `pricing.json` rather than being
 consulted during a report, so the tool stays usable offline and the no-network
 invariant holds.
 
+### Remote price catalogue (opt-in)
+
+`devinmonitor pricing fetch` downloads a public model catalogue (OpenRouter's
+model list by default) and caches it at `<config dir>/pricing.cache.json` for
+offline use. Three properties matter:
+
+- **Off by default.** Nothing reaches the network unless you run `pricing fetch`,
+  or set `config set pricingAutoFetch true` to refresh it at most once every 24h.
+- **Downloads only.** The request is a bare `GET` for a public price list; no
+  usage data, model names or paths are sent.
+- **Never consulted at read time.** Prices are resolved from local files.
+
+Precedence is **your `pricing.json` > the fetched cache > the built-in table**,
+so a refresh can never overwrite a price you set. The cache is written to its own
+file for exactly that reason. `pricing cache` shows its state, and
+`DEVINMONITOR_OFFLINE=1` forbids fetching entirely.
+
 ## Prometheus metrics
 
 The `metrics` command starts an HTTP server (default `:9101`) exposing

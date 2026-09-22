@@ -246,25 +246,39 @@ since been fixed are kept with their resolution so the reasoning is not lost.
    shared now, but a shared layout primitive is the real fix and is deliberately
    deferred: it is a refactor of working, user-visible code with no current
    defect driving it.
-5. **Error classification recall is bounded by the pattern table.** Measured
-   against a real database (621 tool-role, error-looking, short messages), the
-   table classified 58.8% of them; adding the `File Read Error`, `Tool Validation
-   Error` and `Tool Reported Error` categories raised that to 71.8%. The
-   remainder are heterogeneous one-off wordings. Because `model.Message` carries
-   no error flag, a real error whose wording matches nothing is not counted at
-   all, and `Other` never appears in a report — counting every unmatched body as
-   an error would make the total the whole message volume. Localized (non-English)
-   error text is only partly covered.
+5. **Error classification recall, and why keywords do not solve it.**
+   Measured against a real database (621 tool-role, error-looking, short
+   messages), the table classified 58.8% of them; categories for file reads,
+   tool validation and structured tool errors raised that to 71.8%, and an
+   anchored `Unclassified Error` tier took the real corpus from 1292 counted
+   errors to 1549.
+   Two findings are worth recording. First, **an unanchored "contains the word
+   error" fallback was measured and rejected**: it classified `<file-view ...>`
+   listings, `Found 30 match(es)` grep output and `✓ ... started` success
+   messages as errors, because file contents and match results routinely
+   contain those words. Recall would have reached 100% at the cost of a
+   meaningless error rate. Second, the remaining gap is dominated by bodies with
+   no error wording at all, which cannot be recovered without an error flag on
+   the message; `model.Message` carries none, so precision is chosen over recall
+   deliberately. Localized (non-English) error text is only partly covered.
+
 6. **`MaxSupportedSchema` used to be 999**, making `ErrSchemaUnsupported`
    unreachable while the real database ships schema version 16. **Fixed:** the
    ceiling is now the version actually validated, a higher version fails loudly
    with an actionable message, and `DEVINMONITOR_ALLOW_UNKNOWN_SCHEMA=1` is the
    documented escape hatch.
-7. **Is pricing ever going to be fetched?** The README no longer claims a
-   planned external pricing API. If one is added it must **write** into
-   `pricing.json` rather than being consulted at read time, so the tool stays
-   usable offline. The only outbound call today is the notification webhook
-   (`internal/integration/notify.go`), user-initiated.
+7. **Remote pricing is implemented, as a write-through cache only.**
+   `pricing fetch` (plus an opt-in `pricingAutoFetch`) downloads a public model
+   catalogue into `<config dir>/pricing.cache.json`. Three boundaries keep the
+   local-first invariant intact: it is **off unless the user turns it on**; the
+   request is a bare `GET` for a public price list, so **nothing about the local
+   machine is transmitted**; and it **writes to a separate cache file**, never
+   `pricing.json`, so a refresh cannot clobber a hand-written override.
+   Precedence is user override > fetched cache > built-in table, refresh is
+   bounded by a 24h TTL and a 3s timeout, `DEVINMONITOR_OFFLINE=1` forbids
+   fetching outright, and a failed refresh warns instead of failing a report.
+   Read-time lookups still never touch the network.
+
 8. ~~**The period-comparison "Sessions" row printed request counts.**~~
    **Fixed.** `model.TimeBucket` had no session field, so the renderer
    substituted `Requests` (showing 19145 where the real figure was 10) and

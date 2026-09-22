@@ -312,6 +312,8 @@ var cmdModelAliasSub = func() *cobra.Command {
 
 var cmdPricing = func() *cobra.Command {
 	var input, output, cacheRead, cacheWrite float64
+	var sourceURL string
+	var forceFetch bool
 	var freeFlag bool
 	var filePath string
 
@@ -391,7 +393,7 @@ var cmdPricing = func() *cobra.Command {
 	}
 
 	c := &cobra.Command{
-		Use:   "pricing [list|overrides|set <model>|remove <model>|validate|schema]",
+		Use:   "pricing [list|overrides|set <model>|remove <model>|validate|schema|fetch|cache]",
 		Short: i18n.T("cmd.pricing"),
 		Long: i18n.T("cmd.pricing") + "\n\n" +
 			"  list       built-in table plus every user override\n" +
@@ -517,16 +519,65 @@ var cmdPricing = func() *cobra.Command {
 					os.Exit(1)
 				}
 				fmt.Printf("OK: %s is valid\n", path)
+			case "fetch":
+				// Explicit, user-initiated download. The catalogue is public and
+				// the request carries no local data; it is cached for offline use
+				// and never consulted at read time.
+				if pricing.Offline() {
+					fmt.Fprintf(os.Stderr, "offline (%s is set); refusing to fetch\n", pricing.EnvOffline)
+					os.Exit(1)
+				}
+				cachePath := pricing.CachePath()
+				if !forceFetch {
+					if c, err := pricing.LoadCache(cachePath); err == nil && c != nil &&
+						!pricing.NeedsRefresh(c, pricing.DefaultCacheTTL, time.Now()) {
+						fmt.Printf("Cache is fresh (%s, %d models); use --force to refetch.\n",
+							c.FetchedAt, len(c.Models))
+						return
+					}
+				}
+				fmt.Printf("Fetching %s ...\n", firstNonEmpty(sourceURL, pricing.DefaultFetchURL))
+				c, err := pricing.Fetch(sourceURL, pricing.DefaultFetchTimeout, time.Now())
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "%v\n", err)
+					os.Exit(1)
+				}
+				if err := pricing.SaveCache(cachePath, c); err != nil {
+					fmt.Fprintf(os.Stderr, "%v\n", err)
+					os.Exit(1)
+				}
+				fmt.Printf("Cached %d models from %s\n  %s\n", len(c.Models), c.Source, cachePath)
+				fmt.Println("User overrides in the override file still win over the cache.")
+			case "cache":
+				c, err := pricing.LoadCache(pricing.CachePath())
+				switch {
+				case err != nil:
+					fmt.Fprintf(os.Stderr, "%v\n", err)
+					os.Exit(1)
+				case c == nil || len(c.Models) == 0:
+					fmt.Println("No cached price catalogue. Run: pricing fetch")
+				default:
+					state := "fresh"
+					if pricing.NeedsRefresh(c, pricing.DefaultCacheTTL, time.Now()) {
+						state = "stale"
+					}
+					fmt.Printf("Source:    %s\n", c.Source)
+					fmt.Printf("Fetched:   %s (%s)\n", c.FetchedAt, state)
+					fmt.Printf("Models:    %d\n", len(c.Models))
+					fmt.Printf("Cache file: %s\n", pricing.CachePath())
+					fmt.Println("Auto-refresh: " + onOff(config.Global().PricingAutoFetch))
+				}
 			case "schema":
 				fmt.Printf("Schema URL: %s\n", pricing.SchemaURL)
 				fmt.Printf("Override file: %s\n", pricingPath())
+				fmt.Printf("Catalogue cache: %s\n", pricing.CachePath())
 				// The schema may also be checked out next to the working
 				// directory; its absence is not an error.
 				if _, err := os.Stat("docs/pricing.schema.json"); err == nil {
 					fmt.Println("Local schema: docs/pricing.schema.json")
 				}
 			default:
-				fmt.Fprintf(os.Stderr, "unknown subcommand: %s (valid: list, overrides, set, remove, validate, schema)\n", args[0])
+				fmt.Fprintf(os.Stderr, "unknown subcommand: %s (valid: list, overrides, set, remove, validate, schema, fetch, cache)\n", args[0])
 				os.Exit(1)
 			}
 		},
@@ -537,5 +588,23 @@ var cmdPricing = func() *cobra.Command {
 	c.Flags().Float64Var(&cacheWrite, "cache-write", 0, "USD per 1M cache-write tokens")
 	c.Flags().BoolVar(&freeFlag, "free", false, i18n.T("help.pricingFree"))
 	c.Flags().StringVar(&filePath, "file", "", i18n.T("help.pricingFile"))
+	c.Flags().StringVar(&sourceURL, "source", "", i18n.T("help.pricingSource"))
+	c.Flags().BoolVar(&forceFetch, "force", false, i18n.T("help.pricingForce"))
 	return c
+}
+
+// firstNonEmpty returns a when it is non-empty, else b.
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+// onOff renders a boolean for human-facing status output.
+func onOff(v bool) string {
+	if v {
+		return "on"
+	}
+	return "off"
 }

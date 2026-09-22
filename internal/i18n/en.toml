@@ -288,6 +288,10 @@ pricingSchema = "Print the JSON Schema URL and the local override-file path"
 pricingFree = "Mark the model as free (no cost is attributed to it)"
 pricingFile = "Override file path (default: <config dir>/pricing.json)"
 
+pricingFetch = "Download the price catalogue and cache it for offline use"
+pricingSource = "Catalogue URL (default: the built-in public source)"
+pricingForce = "Fetch even when the cache is still fresh"
+
 [block]
 statusActive = "active"
 statusDone   = "done"

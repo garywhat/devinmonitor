@@ -1,0 +1,232 @@
+package pricing
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/garywhat/devinmonitor/internal/state"
+)
+
+// Remote price fetching, with three hard boundaries that keep the tool
+// local-first:
+//
+//  1. It is OFF unless the user turns it on (`pricingAutoFetch`, or an explicit
+//     `pricing fetch`). Nothing reaches the network by default.
+//  2. It only ever DOWNLOADS a public price list. No usage data, no model
+//     names, no paths are sent — the request carries no payload at all.
+//  3. It writes to a separate `<config dir>/pricing.cache.json`, never to
+//     `pricing.json`. That file is hand-edited, so mixing machine writes into
+//     it would let a refresh clobber a user's own overrides.
+//
+// Precedence is therefore: user override > fetched cache > built-in table.
+
+// DefaultFetchURL is the public model list used when no source is configured.
+// OpenRouter publishes per-token prices for a large model catalogue.
+const DefaultFetchURL = "https://openrouter.ai/api/v1/models"
+
+// DefaultCacheTTL is how long a fetched catalogue stays fresh.
+const DefaultCacheTTL = 24 * time.Hour
+
+// DefaultFetchTimeout bounds the request so a slow or unreachable source can
+// never stall a report.
+const DefaultFetchTimeout = 3 * time.Second
+
+// EnvOffline, when truthy, forbids every network call regardless of config.
+const EnvOffline = "DEVINMONITOR_OFFLINE"
+
+// Cache is the on-disk record of a fetched catalogue.
+type Cache struct {
+	Schema    string              `json:"$schema,omitempty"`
+	Note      string              `json:"_note,omitempty"`
+	Source    string              `json:"source"`
+	FetchedAt string              `json:"fetchedAt"` // RFC3339 UTC
+	Models    map[string]Override `json:"models"`
+}
+
+// CachePath returns <config dir>/pricing.cache.json.
+func CachePath() string {
+	return filepath.Join(filepath.Dir(DefaultPath()), "pricing.cache.json")
+}
+
+// Offline reports whether network access is forbidden by the environment.
+func Offline() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvOffline))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+// LoadCache reads a fetched catalogue. A missing file is not an error.
+func LoadCache(path string) (*Cache, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &Cache{Models: map[string]Override{}}, nil
+		}
+		return nil, fmt.Errorf("pricing: read cache: %w", err)
+	}
+	var c Cache
+	if err := json.Unmarshal(data, &c); err != nil {
+		return nil, fmt.Errorf("pricing: parse cache %s: %w", path, err)
+	}
+	if c.Models == nil {
+		c.Models = map[string]Override{}
+	}
+	return &c, nil
+}
+
+// SaveCache writes a catalogue atomically.
+func SaveCache(path string, c *Cache) error {
+	if c == nil {
+		return fmt.Errorf("pricing: cache is nil")
+	}
+	if c.Models == nil {
+		c.Models = map[string]Override{}
+	}
+	if c.FetchedAt == "" {
+		c.FetchedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	if c.Schema == "" {
+		c.Schema = SchemaURL
+	}
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return fmt.Errorf("pricing: encode cache: %w", err)
+	}
+	return state.WriteAtomic(path, append(data, '\n'))
+}
+
+// NeedsRefresh reports whether a fetch should be attempted: no cache, an
+// unparseable timestamp, or one older than ttl.
+func NeedsRefresh(c *Cache, ttl time.Duration, now time.Time) bool {
+	if c == nil || len(c.Models) == 0 || c.FetchedAt == "" {
+		return true
+	}
+	at, err := time.Parse(time.RFC3339, c.FetchedAt)
+	if err != nil {
+		return true
+	}
+	return now.Sub(at) >= ttl
+}
+
+// Fetch downloads a model catalogue and converts it to overrides.
+//
+// It performs a GET with no request body, so nothing about the local machine
+// is transmitted. A non-200 response, a timeout or malformed JSON is returned
+// as an error for the caller to report; nothing is written on failure.
+func Fetch(url string, timeout time.Duration, now time.Time) (*Cache, error) {
+	if Offline() {
+		return nil, fmt.Errorf("pricing: offline (%s is set)", EnvOffline)
+	}
+	if url == "" {
+		url = DefaultFetchURL
+	}
+	if timeout <= 0 {
+		timeout = DefaultFetchTimeout
+	}
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("pricing: fetch %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("pricing: fetch %s: HTTP %d", url, resp.StatusCode)
+	}
+	// Cap the body so a hostile or broken endpoint cannot exhaust memory.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return nil, fmt.Errorf("pricing: read %s: %w", url, err)
+	}
+	models, err := parseCatalogue(body)
+	if err != nil {
+		return nil, err
+	}
+	if len(models) == 0 {
+		return nil, fmt.Errorf("pricing: %s returned no usable prices", url)
+	}
+	return &Cache{
+		Schema:    SchemaURL,
+		Note:      "Generated by `devinmonitor pricing fetch`. Edit pricing.json instead; this file is overwritten on refresh.",
+		Source:    url,
+		FetchedAt: now.UTC().Format(time.RFC3339),
+		Models:    models,
+	}, nil
+}
+
+// catalogueResponse is the OpenRouter /models shape.
+type catalogueResponse struct {
+	Data []struct {
+		ID      string `json:"id"`
+		Pricing struct {
+			Prompt         string `json:"prompt"`
+			Completion     string `json:"completion"`
+			InputCacheRead string `json:"input_cache_read"`
+		} `json:"pricing"`
+	} `json:"data"`
+}
+
+// parseCatalogue converts a published catalogue into overrides.
+//
+// Prices arrive as USD per SINGLE token in decimal strings, so they are scaled
+// to the per-million unit the rest of the tool uses. Entries without a usable
+// price are skipped rather than guessed at.
+func parseCatalogue(body []byte) (map[string]Override, error) {
+	var parsed catalogueResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("pricing: parse catalogue: %w", err)
+	}
+	out := make(map[string]Override, len(parsed.Data))
+	for _, m := range parsed.Data {
+		id := strings.TrimSpace(m.ID)
+		if id == "" {
+			continue
+		}
+		prompt, okP := perMillion(m.Pricing.Prompt)
+		completion, okC := perMillion(m.Pricing.Completion)
+		if !okP || !okC {
+			continue
+		}
+		cacheRead, _ := perMillion(m.Pricing.InputCacheRead)
+		o := Override{
+			InputPerM:      prompt,
+			OutputPerM:     completion,
+			CacheReadPerM:  cacheRead,
+			CacheWritePerM: 0,
+		}
+		if o.InputPerM == 0 && o.OutputPerM == 0 {
+			o.Free = true
+		}
+		out[id] = o
+		// The catalogue uses "vendor/model"; also index the bare model name so a
+		// local model string like "gpt-4o" resolves. The explicit vendor key
+		// wins when both exist.
+		if i := strings.LastIndex(id, "/"); i >= 0 && i+1 < len(id) {
+			if _, exists := out[id[i+1:]]; !exists {
+				out[id[i+1:]] = o
+			}
+		}
+	}
+	return out, nil
+}
+
+// perMillion scales a per-token decimal string to USD per 1M tokens.
+func perMillion(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil || v < 0 {
+		return 0, false
+	}
+	return v * 1e6, true
+}

@@ -84,8 +84,26 @@ func (m *minIntValue) Type() string { return "int" }
 // Two sources feed overrides: the dedicated pricing.json file and the legacy
 // config.customPricing map. The file wins on a conflict so the newer, schema-
 // carrying source is authoritative; nothing writes the legacy map any more.
+// refreshPricingCache downloads the price catalogue and stores it for next run.
+//
+// It is best-effort by design: a warning on stderr, never a fatal error, and a
+// bounded timeout so an offline machine or a slow endpoint cannot stall the
+// command. Nothing about the local machine is transmitted - the request is a
+// bare GET for a public price list.
+func refreshPricingCache(ttl time.Duration, now time.Time) {
+	c, err := pricing.Fetch("", pricing.DefaultFetchTimeout, now)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: price catalogue not refreshed: %v\n", err)
+		return
+	}
+	if err := pricing.SaveCache(pricing.CachePath(), c); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: price catalogue not saved: %v\n", err)
+	}
+}
+
 func installPricingSources() {
 	cfg := config.Global()
+	now := time.Now()
 	if cfg != nil && len(cfg.ModelAliases) > 0 {
 		model.SetModelAliases(cfg.ModelAliases)
 	}
@@ -101,6 +119,32 @@ func installPricingSources() {
 				CacheWritePerM: cp.CacheWritePerM,
 			}
 		}
+	}
+
+	// The fetched catalogue sits BELOW the user's own file: a refresh must never
+	// override a price the user set deliberately.
+	cacheTTL := pricing.DefaultCacheTTL
+	if c, err := pricing.LoadCache(pricing.CachePath()); err == nil && c != nil {
+		for name, o := range c.Models {
+			if _, taken := overrides[name]; taken {
+				continue
+			}
+			overrides[name] = model.Pricing{
+				Model:          name,
+				InputPerM:      o.InputPerM,
+				OutputPerM:     o.OutputPerM,
+				CacheReadPerM:  o.CacheReadPerM,
+				CacheWritePerM: o.CacheWritePerM,
+				Free:           o.Free,
+			}
+		}
+		// Auto-refresh is opt-in and bounded: at most once per TTL, with a short
+		// timeout, and a failure only warns. Reports are never blocked on it.
+		if cfg != nil && cfg.PricingAutoFetch && pricing.NeedsRefresh(c, cacheTTL, now) {
+			refreshPricingCache(cacheTTL, now)
+		}
+	} else if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: ignoring %s: %v\n", pricing.CachePath(), err)
 	}
 
 	path := pricing.DefaultPath()

@@ -311,6 +311,20 @@ Devin CLI 的 SQLite schema 是内部实现细节，可能随版本变化。
 
 定价完全在本地解析，读取时**从不联网**。若将来引入远程价格源，它必须**写入** `pricing.json`，而不是在生成报表时被查询——这样工具离线可用，「无网络」不变式也得以保持。
 
+### 远程价格目录（需手动开启）
+
+`devinmonitor pricing fetch` 会下载公开的模型价格目录（默认 OpenRouter 的模型
+列表）并缓存到 `<配置目录>/pricing.cache.json`，供离线使用。三个关键性质：
+
+- **默认关闭**：除非你执行 `pricing fetch`，或设置 `config set pricingAutoFetch true`
+  （最多每 24 小时刷新一次），否则不会访问网络。
+- **只下载**：请求是一个获取公开价格列表的裸 `GET`，不发送任何用量数据、模型名或路径。
+- **读取时绝不联网**：价格始终从本地文件解析。
+
+优先级为 **你的 `pricing.json` > 拉取的缓存 > 内置表**，因此刷新永远不会覆盖你
+手动设置的价格——缓存单独成文件正是为此。`pricing cache` 查看缓存状态，
+`DEVINMONITOR_OFFLINE=1` 可完全禁止拉取。
+
 ## Prometheus 指标
 
 `metrics` 命令启动一个 HTTP 服务（默认 `:9101`），暴露

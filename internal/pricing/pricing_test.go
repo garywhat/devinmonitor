@@ -31,6 +31,21 @@ func TestDefaultPathHonoursConfigDir(t *testing.T) {
 	if filepath.Dir(got) != filepath.Dir(config.Path()) {
 		t.Fatalf("DefaultPath() dir = %q, want config dir %q", filepath.Dir(got), filepath.Dir(config.Path()))
 	}
+
+	// The fetched-catalogue cache shares the directory but is a DIFFERENT file:
+	// mixing machine writes into the hand-edited override file would let a
+	// refresh clobber the user's own entries. Asserted here because this is the
+	// designated first caller of config.Path().
+	cache := CachePath()
+	if cache == got {
+		t.Fatalf("CachePath() = %q must differ from DefaultPath()", cache)
+	}
+	if filepath.Base(cache) != "pricing.cache.json" {
+		t.Fatalf("CachePath() = %q, want a path ending in pricing.cache.json", cache)
+	}
+	if filepath.Dir(cache) != filepath.Dir(got) {
+		t.Fatalf("CachePath() dir = %q, want the same config dir %q", filepath.Dir(cache), filepath.Dir(got))
+	}
 }
 
 func TestLoadMissingFileIsEmptyNotAnError(t *testing.T) {

@@ -151,6 +151,28 @@ var Categories = []Category{
 			`UNAVAILABLE`,
 		},
 	},
+	{
+		// The fallback tier: a body carrying a POSITIVE, ANCHORED error signal
+		// that matches no named category - a Python traceback, a `fatal:` line,
+		// a CLI printing `Error: ...`.
+		//
+		// Every pattern is anchored to the start of the body, because position
+		// is what makes the signal trustworthy. A generic "contains the word
+		// error" test was measured against a real database and classified
+		// `<file-view path=...>` listings, `Found 30 match(es)` grep output and
+		// `✓ ... started` success messages as errors: file contents and match
+		// results routinely contain those words. Precision is worth more than
+		// recall here - an inflated error rate is worse than a conservative one.
+		Name: "Unclassified Error",
+		Patterns: []string{
+			`(?i)^\s*(error|failed|fatal|exception|traceback|panic)[:.\s]`,
+			`(?i)^output from .{0,80}?:\s*(error|fatal|traceback)`,
+			`(?i)^\s*\{\s*"(error|errorCode|errorMessage|errorType)"\s*:`,
+			`(?i)^\s*(cannot|unable to|permission denied|access denied|not found|invalid |unexpected |no such )`,
+			`(?i)^\s*(exit(ed)? (with )?(code|status) [1-9]|command failed|command not found)`,
+			`^\s*(错误|失败|异常|无法|拒绝|超时)[:：]`,
+		},
+	},
 }
 
 // Finding is one categorised error occurrence.

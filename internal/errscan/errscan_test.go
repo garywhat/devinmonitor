@@ -178,6 +178,7 @@ func TestCategoriesShape(t *testing.T) {
 		"No Changes",
 		"Tool Validation Error",
 		"Tool Reported Error",
+		"Unclassified Error",
 	}
 	if len(Categories) != len(want) {
 		t.Fatalf("Categories has %d entries, want %d", len(Categories), len(want))
@@ -586,8 +587,8 @@ func TestToolReportedErrorIgnoresSuccessCodes(t *testing.T) {
 
 // TestCategoriesTableIsOrderedAndComplete keeps the table itself honest.
 func TestCategoriesTableIsOrderedAndComplete(t *testing.T) {
-	if len(Categories) < 12 {
-		t.Fatalf("Categories has %d entries, want at least 12", len(Categories))
+	if len(Categories) < 13 {
+		t.Fatalf("Categories has %d entries, want at least 13", len(Categories))
 	}
 	for i, c := range Categories {
 		if c.Name == "" || c.Name == other {
@@ -606,4 +607,82 @@ func TestCategoriesTableIsOrderedAndComplete(t *testing.T) {
 		t.Errorf("File Read Error (%d) must precede Tool Validation Error (%d)",
 			idx["File Read Error"], idx["Tool Validation Error"])
 	}
+}
+
+// TestUnclassifiedErrorIsAnchored is the regression guard for the fallback tier.
+//
+// The point of anchoring is precision. A "contains the word error" test was
+// measured against a real database and flagged normal file listings, grep
+// results and success messages, because those bodies routinely quote the word.
+// These cases are taken from that measurement.
+func TestUnclassifiedErrorIsAnchored(t *testing.T) {
+	// Genuine errors: the signal is positional.
+	errors := []string{
+		"Error: -p took \"--dangerously-skip-permissions\" as its prompt",
+		"Output from command in shell 5a966f: Traceback (most recent call last):",
+		"Output from command in shell 50271b: fatal: not a git repository (or any of the parent directories)",
+		"Output from command in shell f590eb: ERROR: Could not find a version that satisfies the requirement",
+		"Fatal: unable to access repository",
+		"错误: 无法写入目标文件",
+	}
+	for _, body := range errors {
+		t.Run("error/"+firstWords(body, 4), func(t *testing.T) {
+			if got := Categorize(body); got != "Unclassified Error" {
+				t.Errorf("Categorize(%q) = %q, want Unclassified Error", body, got)
+			}
+		})
+	}
+
+	// A structured JSON error body is owned by the named tier, which proves the
+	// fallback does not shadow a more specific category.
+	if got := Categorize(`{"errorCode":"NotFound","errorMessage":"Not Found"}`); got != "Tool Reported Error" {
+		t.Errorf("structured JSON error = %q, want Tool Reported Error", got)
+	}
+
+	// Benign bodies that merely CONTAIN an error word must stay uncounted.
+	benign := []string{
+		`<file-view path="/repo/README.md" start_line="1">` + "\nSee the error handling section below.",
+		"Found 30 match(es) (limited by max_results) for pattern 'OSS|error'",
+		"Output from command in shell 1fe272: server started and listening",
+		`[{"server_name":"agentmemory","tools":[]}]`,
+		"The handler logs every failure to stderr for later analysis.",
+	}
+	for _, body := range benign {
+		t.Run("benign/"+firstWords(body, 4), func(t *testing.T) {
+			if got := Categorize(body); got != other {
+				t.Errorf("Categorize(%q) = %q, want %q (no false positive)", body, got, other)
+			}
+		})
+	}
+}
+
+// TestNamedCategoriesBeatTheFallback makes sure the anchored tier never steals a
+// body a named category should own.
+func TestNamedCategoriesBeatTheFallback(t *testing.T) {
+	cases := []struct{ body, want string }{
+		{"Error: File has not been read yet", "File Not Read"},
+		// File Read Error sits ahead of Content Not Found on purpose.
+		{"Failed to read file '/x': no such file or directory", "File Read Error"},
+		{"Output from command in shell abc: Permission denied", "Permission Error"},
+	}
+	for _, c := range cases {
+		if got := Categorize(c.body); got != c.want {
+			t.Errorf("Categorize(%q) = %q, want %q", c.body, got, c.want)
+		}
+	}
+}
+
+func firstWords(s string, n int) string {
+	out := ""
+	count := 0
+	for _, r := range s {
+		if r == ' ' || r == '\n' {
+			count++
+			if count >= n {
+				break
+			}
+		}
+		out += string(r)
+	}
+	return out
 }
