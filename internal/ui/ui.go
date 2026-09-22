@@ -121,6 +121,14 @@ func truncateCJK(s string, maxDisplayWidth int) string {
 	return out + "…"
 }
 
+// PadRight and PadLeft are the exported forms of the CJK-correct helpers
+// above, alongside the already-exported Truncate. They are exported so other
+// packages stop growing their own rune-counting copies: a rune count equals a
+// display width only for single-width scripts, so a Chinese label in an
+// otherwise ASCII table misaligns every column after it.
+func PadRight(s string, targetWidth int) string { return padRight(s, targetWidth) }
+func PadLeft(s string, targetWidth int) string  { return padLeft(s, targetWidth) }
+
 // ---- Table ----
 
 // TableBuilder builds a styled table with rounded borders and CJK-correct

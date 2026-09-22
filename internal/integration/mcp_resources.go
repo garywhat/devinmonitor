@@ -24,6 +24,7 @@ import (
 	"github.com/garywhat/devinmonitor/internal/limit"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/report"
+	"github.com/garywhat/devinmonitor/internal/ui"
 )
 
 // mcpResource is one advertised resource.
@@ -389,32 +390,14 @@ func buildResourceAlerts(cmd *cobra.Command) (string, *rpcError) {
 
 // ---- plain-text layout helpers ----
 
-// padRight pads s with spaces to w runes (a no-op when s is already wider).
-func padRight(s string, w int) string {
-	if n := utf8.RuneCountInString(s); n < w {
-		return s + strings.Repeat(" ", w-n)
-	}
-	return s
-}
-
-// padLeft pads s with leading spaces to w runes.
-func padLeft(s string, w int) string {
-	if n := utf8.RuneCountInString(s); n < w {
-		return strings.Repeat(" ", w-n) + s
-	}
-	return s
-}
-
-// truncateRunes shortens s to at most w runes, marking the cut with "...".
+// padRight/padLeft/truncateRunes delegate to internal/ui, which measures
+// DISPLAY width (go-runewidth) rather than rune count. The rune-counting
+// versions these replaced aligned ASCII tables correctly but shifted every
+// column after a CJK label.
+func padRight(s string, w int) string { return ui.PadRight(s, w) }
+func padLeft(s string, w int) string  { return ui.PadLeft(s, w) }
 func truncateRunes(s string, w int) string {
-	if utf8.RuneCountInString(s) <= w {
-		return s
-	}
-	r := []rune(s)
-	if w <= 3 {
-		return string(r[:w])
-	}
-	return string(r[:w-3]) + "..."
+	return ui.Truncate(s, w)
 }
 
 // wrapText greedily wraps text into lines of at most width runes. A single word

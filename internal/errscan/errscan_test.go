@@ -169,12 +169,15 @@ func TestCategoriesShape(t *testing.T) {
 		"User Interruption",
 		"Command Timeout",
 		"File Not Read",
+		"File Read Error",
 		"File Modified",
 		"File Too Large",
 		"Permission Error",
 		"Content Not Found",
 		"Tool Not Found",
 		"No Changes",
+		"Tool Validation Error",
+		"Tool Reported Error",
 	}
 	if len(Categories) != len(want) {
 		t.Fatalf("Categories has %d entries, want %d", len(Categories), len(want))
@@ -512,5 +515,95 @@ func TestWriteJSONShape(t *testing.T) {
 	}
 	if len(back.ByCategory) != 3 {
 		t.Errorf("round-trip ByCategory = %+v, want 3 entries", back.ByCategory)
+	}
+}
+
+// TestCategorizeV041Categories pins the three categories added after measuring
+// classification recall against a real database (it was 58.8% without them).
+func TestCategorizeV041Categories(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"read failure", "Tool 'read' validation failed: Failed to read file '/x/y.go'", "File Read Error"},
+		{"offset past eof", "Tool 'read' validation failed: Offset 175 is beyond end of file (171 lines)", "File Read Error"},
+		{"is a directory", "Tool 'read' validation failed: /tmp is a directory", "File Read Error"},
+		{"generic validation", "Tool 'ask_user_question' validation failed: Question 2 must have 2-4 options, got 5.", "Tool Validation Error"},
+		{"bare validation", "validation failed for argument 'offset'", "Tool Validation Error"},
+		{"json error object", `Output from command: {"errorCode":"NotFound","errorMessage":"Not Found"}`, "Tool Reported Error"},
+		{"http code in parens", "Eligibility check failed: UNAVAILABLE (code 503)", "Tool Reported Error"},
+		{"http status", "request finished with code 500", "Tool Reported Error"},
+		{"non-zero exit", "process exited with code 2", "Tool Reported Error"},
+		{"localized permission", "execution error: 文件许可错误。 (-54)", "Permission Error"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := Categorize(c.body); got != c.want {
+				t.Errorf("Categorize(%q) = %q, want %q", c.body, got, c.want)
+			}
+		})
+	}
+}
+
+// TestCategorizeLocalizedPermission checks the localized permission phrasings
+// added because the table used to be English-only.
+func TestCategorizeLocalizedPermission(t *testing.T) {
+	for _, body := range []string{
+		"许可错误: 无法写入目标文件",
+		"权限不足，操作被拒绝",
+		"拒绝访问 /etc/hosts",
+	} {
+		if got := Categorize(body); got != "Permission Error" {
+			t.Errorf("Categorize(%q) = %q, want Permission Error", body, got)
+		}
+	}
+}
+
+// TestCategorizeOrderingFileReadBeforeValidation is the regression guard for the
+// deliberate placement of File Read Error ahead of Tool Validation Error: a read
+// failure also carries "validation failed", and the file-level cause is the more
+// actionable one.
+func TestCategorizeOrderingFileReadBeforeValidation(t *testing.T) {
+	body := "Tool 'read' validation failed: Failed to read file '/a/b'"
+	if got := Categorize(body); got != "File Read Error" {
+		t.Fatalf("Categorize(%q) = %q, want File Read Error (ordering regression)", body, got)
+	}
+}
+
+// TestToolReportedErrorIgnoresSuccessCodes makes sure the HTTP-code pattern only
+// fires for 4xx/5xx; a successful request must not be classified as an error.
+func TestToolReportedErrorIgnoresSuccessCodes(t *testing.T) {
+	for _, body := range []string{
+		"request finished with code 200",
+		"response status code 302",
+	} {
+		if got := Categorize(body); got != "Other" {
+			t.Errorf("Categorize(%q) = %q, want Other", body, got)
+		}
+	}
+}
+
+// TestCategoriesTableIsOrderedAndComplete keeps the table itself honest.
+func TestCategoriesTableIsOrderedAndComplete(t *testing.T) {
+	if len(Categories) < 12 {
+		t.Fatalf("Categories has %d entries, want at least 12", len(Categories))
+	}
+	for i, c := range Categories {
+		if c.Name == "" || c.Name == other {
+			t.Errorf("Categories[%d] has an invalid name %q", i, c.Name)
+		}
+		if len(c.Patterns) == 0 {
+			t.Errorf("Categories[%d] (%s) has no patterns", i, c.Name)
+		}
+	}
+	// File Read Error must precede Tool Validation Error.
+	idx := map[string]int{}
+	for i, c := range Categories {
+		idx[c.Name] = i
+	}
+	if idx["File Read Error"] >= idx["Tool Validation Error"] {
+		t.Errorf("File Read Error (%d) must precede Tool Validation Error (%d)",
+			idx["File Read Error"], idx["Tool Validation Error"])
 	}
 }

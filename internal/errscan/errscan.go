@@ -76,6 +76,18 @@ var Categories = []Category{
 		Patterns: []string{`File has not been read yet`},
 	},
 	{
+		// A file that exists but could not be used. Deliberately placed BEFORE
+		// "Tool Validation Error": a read failure usually also carries
+		// "validation failed", and the file-level cause is the more actionable
+		// classification.
+		Name: "File Read Error",
+		Patterns: []string{
+			`Failed to read file`,
+			`Offset \d+ is beyond end of file`,
+			`is a directory`,
+		},
+	},
+	{
 		Name:     "File Modified",
 		Patterns: []string{`File has been modified since read`},
 	},
@@ -87,6 +99,10 @@ var Categories = []Category{
 		Name: "Permission Error",
 		Patterns: []string{
 			`Permission denied`,
+			// Devin emits localized error text too; the classification table
+			// was English-only. These are the specific localized permission
+			// phrasings, not a generic "任何含错误二字的消息".
+			`许可错误|权限不足|没有权限|拒绝访问`,
 			// Two independent conditions, kept as ONE regex on purpose: split
 			// into two patterns, a plain "cd to" anywhere would be
 			// misclassified as a permission error.
@@ -110,6 +126,30 @@ var Categories = []Category{
 	{
 		Name:     "No Changes",
 		Patterns: []string{`No changes to make`},
+	},
+	{
+		// The tool rejected the call before running it (argument shape, option
+		// counts, offsets). Distinct from a tool that ran and failed.
+		Name: "Tool Validation Error",
+		Patterns: []string{
+			`Tool '[^']*' validation failed`,
+			`validation failed`,
+		},
+	},
+	{
+		// Structured failures reported by a tool or a remote service: JSON
+		// error objects, HTTP codes, non-zero exit statuses. Kept last of the
+		// specific categories because these markers are the most generic.
+		// Only 4xx/5xx are matched so a successful "status code 200" is not
+		// mistaken for an error.
+		Name: "Tool Reported Error",
+		Patterns: []string{
+			`"error(Code|Message)"`,
+			`\(code \d+\)`,
+			`\bcode [45]\d\d\b`,
+			`exited with (code|status) [1-9]`,
+			`UNAVAILABLE`,
+		},
 	},
 }
 

@@ -323,10 +323,15 @@ reports and UI are unaffected.
 | Layer | Source | When used |
 |-------|--------|-----------|
 | Authoritative | `sessions.metadata.total_credit_cost` / `total_acu_cost` | Non-zero (paid models) |
+| User override | `<config dir>/pricing.json` | When set for the model (wins over the built-in table) |
 | Estimate | Built-in token x price table | Credit is zero (free models) |
-| Future | External pricing API (openrouter etc.) | Planned |
 
 Free models (e.g. `glm-5-2`) show `free` in cost columns.
+
+Pricing is resolved locally and never fetched at read time. If a remote price
+source is ever added it must **write** into `pricing.json` rather than being
+consulted during a report, so the tool stays usable offline and the no-network
+invariant holds.
 
 ## Prometheus metrics
 

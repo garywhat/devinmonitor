@@ -8,28 +8,28 @@ import "time"
 
 // Session is a normalized Devin CLI session.
 type Session struct {
-	ID              string
-	WorkingDir      string
-	BackendType     string
-	Model           string
-	AgentMode       string // normal / plan / bypass
-	CreatedAt       time.Time
-	LastActivityAt  time.Time
-	Title           string
-	MainChainID     int
-	Hidden          bool
-	WorkspaceDirs   []string
+	ID             string
+	WorkingDir     string
+	BackendType    string
+	Model          string
+	AgentMode      string // normal / plan / bypass
+	CreatedAt      time.Time
+	LastActivityAt time.Time
+	Title          string
+	MainChainID    int
+	Hidden         bool
+	WorkspaceDirs  []string
 	// Cost from Devin's own accounting (authoritative when non-zero).
 	CreditCost float64
 	ACUCost    float64
 	// Aggregated from assistant messages.
-	Messages    []Message
-	InputTokens int64
-	OutputTokens int64
-	CacheRead   int64
-	CacheWrite  int64
-	ToolCalls   map[string]int // tool name -> count
-	AssistantCount int         // number of assistant turns (= requests)
+	Messages       []Message
+	InputTokens    int64
+	OutputTokens   int64
+	CacheRead      int64
+	CacheWrite     int64
+	ToolCalls      map[string]int // tool name -> count
+	AssistantCount int            // number of assistant turns (= requests)
 	// LatestModel is the generation_model from the most recent assistant
 	// message. More accurate than the session-level Model field (which is
 	// set at creation time and doesn't update when the user switches models).
@@ -43,17 +43,17 @@ type Session struct {
 
 // Message is a single chat message node.
 type Message struct {
-	NodeID    int
-	Role      string // system / user / assistant / tool
-	Content   string
-	CreatedAt time.Time
+	NodeID     int
+	Role       string // system / user / assistant / tool
+	Content    string
+	CreatedAt  time.Time
 	ToolCallID string // for role=tool messages: the tool_call_id this result belongs to
 	// Assistant-only fields (zero for other roles).
-	Metrics    *Metrics
-	FinishReason string
-	GenerationModel string
-	RequestID  string
-	ToolCalls  []ToolCall
+	Metrics            *Metrics
+	FinishReason       string
+	GenerationModel    string
+	RequestID          string
+	ToolCalls          []ToolCall
 	NumTokensPreceding int // context size at this point (if available)
 }
 
@@ -78,15 +78,15 @@ type ToolCall struct {
 
 // SubAgentCall is a parsed run_subagent invocation.
 type SubAgentCall struct {
-	Title        string    // task title
-	Profile      string    // subagent_explore / subagent_general / etc.
-	IsBackground bool      // whether the subagent runs in the background
-	Task         string    // full task description
-	AgentID      string    // agent_id from tool result (for background subagents)
-	StartTime    time.Time // when the run_subagent tool call was made
-	EndTime      time.Time // when completion notification arrived (zero if not found)
-	HasCompletion bool     // whether a completion notification was found
-	OutputLen    int       // character count of the completion notification content
+	Title         string    // task title
+	Profile       string    // subagent_explore / subagent_general / etc.
+	IsBackground  bool      // whether the subagent runs in the background
+	Task          string    // full task description
+	AgentID       string    // agent_id from tool result (for background subagents)
+	StartTime     time.Time // when the run_subagent tool call was made
+	EndTime       time.Time // when completion notification arrived (zero if not found)
+	HasCompletion bool      // whether a completion notification was found
+	OutputLen     int       // character count of the completion notification content
 }
 
 // ModelStats aggregates usage for a single model across sessions.
@@ -150,14 +150,15 @@ func sortFloats(a []float64) {
 
 // TimeBucket is a daily/weekly/monthly aggregation.
 type TimeBucket struct {
-	Label       string // date / week / month label
-	Requests    int
-	InputTokens int64
+	Label        string // date / week / month label
+	Sessions     int    // distinct sessions that contributed
+	Requests     int
+	InputTokens  int64
 	OutputTokens int64
-	CacheRead   int64
-	CreditCost  float64
-	ACUCost     float64
-	ByModel     map[string]*ModelStats
+	CacheRead    int64
+	CreditCost   float64
+	ACUCost      float64
+	ByModel      map[string]*ModelStats
 }
 
 // DayStart returns t truncated to midnight local.

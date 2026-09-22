@@ -86,9 +86,13 @@ func cmdFilter() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "invalid --to-date: %v\n", err)
 				os.Exit(1)
 			}
-			// Inclusive end: add 24h so a --to-date of the same day includes it.
+			// Inclusive end: move to the start of the NEXT calendar day so a
+			// --to-date includes that whole day. AddDate is used instead of
+			// +24h because an hour is lost or duplicated on a DST transition,
+			// which would shift the boundary; filter.Apply compares with a
+			// strict After, so next-midnight itself is correctly excluded.
 			if !to.IsZero() {
-				to = to.Add(24 * 60 * 60 * 1e9) // +1 day
+				to = to.AddDate(0, 0, 1)
 			}
 
 			opts := model.FilterOptions{

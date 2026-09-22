@@ -154,11 +154,17 @@ func ClassifySession(s *model.Session) string {
 		return CatExploration
 	}
 	// 8. Conversation (no tools at all)
+	//
+	// "At all" has to mean EITHER source is empty, because the two are
+	// independent: the steps above classify per-message m.ToolCalls, while
+	// s.ToolCalls is a session-level aggregate map that can be populated on its
+	// own. Consulting only one of them mislabels the other kind of session as
+	// "Conversation" even though it clearly used tools.
 	totalTools := 0
 	for _, c := range s.ToolCalls {
 		totalTools += c
 	}
-	if totalTools == 0 {
+	if totalTools == 0 && !hasEdit && !hasRead && !hasExec && !hasSubAgent && !hasTodoWrite {
 		return CatConversation
 	}
 	// 9. General fallback

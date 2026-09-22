@@ -11,13 +11,34 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/garywhat/devinmonitor/internal/model"
 )
 
-// MaxSupportedSchema is the highest refinery schema version we understand.
-// Bump when a new adapter is added.
-const MaxSupportedSchema = 999 // current schema has no version row; treat as v1
+// MaxSupportedSchema is the highest refinery schema version this build has been
+// validated against. The real database ships a version row (observed: 16), so
+// this is a real ceiling rather than a formality.
+//
+// It used to be 999 with a comment claiming the schema had no version row,
+// which made ErrSchemaUnsupported unreachable: a future schema could drop or
+// rename a column and we would silently parse it as if it were v16, reporting
+// wrong numbers. For a monitoring tool a loud failure beats a plausible wrong
+// figure, so the ceiling is the version we have actually exercised.
+//
+// A schema bump that is in fact compatible can still be forced through with
+// DEVINMONITOR_ALLOW_UNKNOWN_SCHEMA=1, which is far easier to explain to a user
+// than silently wrong data.
+const MaxSupportedSchema = 16
+
+// allowUnknownSchema reports whether the escape hatch is set.
+func allowUnknownSchema() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("DEVINMONITOR_ALLOW_UNKNOWN_SCHEMA"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
 
 // ErrNoDB is returned when sessions.db cannot be located.
 type ErrNoDB struct{ Path string }
@@ -28,7 +49,9 @@ func (e *ErrNoDB) Error() string { return fmt.Sprintf("sessions.db not found at:
 type ErrSchemaUnsupported struct{ Ver, Max int }
 
 func (e *ErrSchemaUnsupported) Error() string {
-	return fmt.Sprintf("unsupported schema version %d (expected <= %d)", e.Ver, e.Max)
+	return fmt.Sprintf("unsupported schema version %d: this build understands up to %d.\n"+
+		"Upgrade devinmonitor, or set DEVINMONITOR_ALLOW_UNKNOWN_SCHEMA=1 to try anyway "+
+		"(readings may be wrong)", e.Ver, e.Max)
 }
 
 // Reader reads normalized data from Devin CLI's session store.
@@ -56,7 +79,7 @@ func Open(dataDir string) (Reader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("detect schema: %w", err)
 	}
-	if ver > MaxSupportedSchema {
+	if ver > MaxSupportedSchema && !allowUnknownSchema() {
 		return nil, &ErrSchemaUnsupported{Ver: ver, Max: MaxSupportedSchema}
 	}
 	// Currently only v1 exists.

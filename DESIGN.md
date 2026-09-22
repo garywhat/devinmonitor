@@ -224,46 +224,61 @@ in Go is a bug, not a shortcut.
 
 ## Open questions
 
-Items 1, 2 and 5 below were found while writing this document and have since
-been fixed in the same release; they are kept here with their resolution so the
-reasoning is not lost. Items 3, 4, 6 and 7 are still open.
+Several items below were found while writing this document; those that have
+since been fixed are kept with their resolution so the reasoning is not lost.
 
 1. ~~**The Full tier's height threshold was documented as 24 but implemented as
    28.**~~ **Fixed.** Both READMEs and the comment above `viewFull` now state
-   `>= 28 rows`, matching the predicate in `View()`.
+   `>= 28 rows`.
 2. ~~**`internal/pricing` was implemented but wired to nothing.**~~ **Fixed.**
-   `internal/model/pricing.go` now consults an override table installed at
-   startup, so `LookupPricing` — and therefore every cost path (reports, live
-   TUI, trends, MCP, web) — honours `pricing.json`. The legacy
-   `config.customPricing` map is still read for compatibility and the dedicated
-   file wins; `pricing overrides|validate|schema` expose it, and
-   `pricing.Override.Free` is now carried through.
-3. **Is pricing ever going to be fetched?** `README.md`'s cost table lists
-   "External pricing API (openrouter etc.) — Planned", which would break the
-   no-network invariant the design rests on. The one outbound call today is the
-   notification webhook (`internal/integration/notify.go`), user-initiated. If
-   remote pricing is ever added it should write into the local override file
-   rather than being consulted at read time.
-4. **Geometry is re-derived in each surface.** Panel heights, column widths,
-   truncation and card layout are hand-computed independently in
-   `internal/live/live.go`, `internal/live/settings.go` and `internal/trends`, and
-   the `w--` autowrap guard is repeated per layout; with no shared layout
-   primitive, the same off-by-one can be fixed in one place and missed in another.
-5. ~~**`auto` theme was always dark.**~~ **Fixed.** `isLightTerminal()` now reads
-   the hints terminals actually export (`TERM_BACKGROUND`, then `COLORFGBG`'s
-   background index) and defaults to dark when nothing is known, since a wrong
-   "light" would render near-white text on white. Lipgloss still exposes no
-   background query, so an OSC 11 round-trip remains the only exact method.
-6. ~~**The trends delta snapshot used a machine-global temp path.**~~ **Fixed.**
-   It now lives at `<config dir>/state/trends-delta.json` and is written
-   atomically, so projects, users and sandboxes no longer clobber one another.
-7. **`MaxSupportedSchema = 999` makes the reader's `ErrSchemaUnsupported` path
-   inert.** `internal/reader/reader.go` accepts any version below 999, so a
-   future incompatible schema would be parsed as if it were understood. The
-   guard is deliberate (the current schema has no version row) but the constant
-   is indistinguishable from "we understand everything".
-8. **Unmatched error text is not classified.** `errors` can only detect an error
-   by pattern, because `model.Message` carries no error flag; a real error whose
-   wording no pattern matches is therefore not counted at all, and `Other` never
-   appears in a report. Counting every unmatched body as an error would make the
-   total the whole message volume, so the conservative choice is deliberate.
+   `model.LookupPricing` now consults an override table installed at startup, so
+   every cost path honours `pricing.json`. The legacy `config.customPricing` map
+   is still read for compatibility and the file wins. Model aliases were dead in
+   exactly the same way and are now applied in the same place.
+3. ~~**Narrow-terminal truncation existed in four rune-counting copies.**~~
+   **Fixed.** `internal/ui` measures *display* width (go-runewidth); the MCP
+   resources' own `padRight`/`padLeft`/`truncateRunes` were rune-count based, so
+   any CJK label shifted every column after it. They now delegate to
+   `ui.PadRight`/`ui.PadLeft`/`ui.Truncate`.
+4. **Layout geometry is still re-derived per surface.** Panel heights, column
+   widths and card layout are computed independently in `internal/live/live.go`,
+   `internal/live/settings.go` and `internal/trends`. The truncation helpers are
+   shared now, but a shared layout primitive is the real fix and is deliberately
+   deferred: it is a refactor of working, user-visible code with no current
+   defect driving it.
+5. **Error classification recall is bounded by the pattern table.** Measured
+   against a real database (621 tool-role, error-looking, short messages), the
+   table classified 58.8% of them; adding the `File Read Error`, `Tool Validation
+   Error` and `Tool Reported Error` categories raised that to 71.8%. The
+   remainder are heterogeneous one-off wordings. Because `model.Message` carries
+   no error flag, a real error whose wording matches nothing is not counted at
+   all, and `Other` never appears in a report — counting every unmatched body as
+   an error would make the total the whole message volume. Localized (non-English)
+   error text is only partly covered.
+6. **`MaxSupportedSchema` used to be 999**, making `ErrSchemaUnsupported`
+   unreachable while the real database ships schema version 16. **Fixed:** the
+   ceiling is now the version actually validated, a higher version fails loudly
+   with an actionable message, and `DEVINMONITOR_ALLOW_UNKNOWN_SCHEMA=1` is the
+   documented escape hatch.
+7. **Is pricing ever going to be fetched?** The README no longer claims a
+   planned external pricing API. If one is added it must **write** into
+   `pricing.json` rather than being consulted at read time, so the tool stays
+   usable offline. The only outbound call today is the notification webhook
+   (`internal/integration/notify.go`), user-initiated.
+8. ~~**The period-comparison "Sessions" row printed request counts.**~~
+   **Fixed.** `model.TimeBucket` had no session field, so the renderer
+   substituted `Requests` (showing 19145 where the real figure was 10) and
+   `Avg $/session` divided by the request count. The bucket now carries
+   `Sessions` and both uses are corrected.
+9. ~~**Two basename helpers disagreed on Windows paths.**~~ **Fixed.**
+   `report.baseProject` split only on `/` while `project.baseProject` also
+   split on `\`, so the `projects` listing named a directory `C:\work\proj`
+   while `project` and `git` called it `proj`. Both split on either separator
+   now, and a test asserts they agree.
+10. ~~**`--to-date` compensated with a literal +24h.**~~ **Fixed.** An hour is
+   lost or duplicated across a DST transition, which shifted the boundary, and
+   `filter.Apply` compares with a strict `After`, so the bound now uses
+   `AddDate(0, 0, 1)` and next-midnight is correctly excluded.
+11. **`other`-bucket semantics for error analysis** are a deliberate trade-off,
+   described in item 5. If recall matters more than precision, the pattern table
+   is the lever — not the bucket.

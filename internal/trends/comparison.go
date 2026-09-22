@@ -15,14 +15,14 @@ import (
 
 // bucketMetrics holds the 8 metrics compared between two periods.
 type bucketMetrics struct {
-	Sessions         int
-	Requests         int
-	InputTokens      int64
-	OutputTokens     int64
-	CacheRead        int64
-	TotalTokens      int64
-	Cost             float64
-	AvgCostPerSess   float64
+	Sessions       int
+	Requests       int
+	InputTokens    int64
+	OutputTokens   int64
+	CacheRead      int64
+	TotalTokens    int64
+	Cost           float64
+	AvgCostPerSess float64
 }
 
 // metricNames is the ordered list of 8 metrics rendered in the comparison table.
@@ -88,20 +88,22 @@ func BuildPeriodComparison(ss []model.Session, curStart, curEnd, prevStart, prev
 
 	return &model.PeriodComparison{
 		Current: model.TimeBucket{
-			Label:       curStart.Format("2006-01-02") + " ~ " + curEnd.Add(-time.Second).Format("2006-01-02"),
-			Requests:    cur.Requests,
-			InputTokens: cur.InputTokens,
+			Label:        curStart.Format("2006-01-02") + " ~ " + curEnd.Add(-time.Second).Format("2006-01-02"),
+			Sessions:     cur.Sessions,
+			Requests:     cur.Requests,
+			InputTokens:  cur.InputTokens,
 			OutputTokens: cur.OutputTokens,
-			CacheRead:   cur.CacheRead,
-			CreditCost:  cur.Cost,
+			CacheRead:    cur.CacheRead,
+			CreditCost:   cur.Cost,
 		},
 		Previous: model.TimeBucket{
-			Label:       prevStart.Format("2006-01-02") + " ~ " + prevEnd.Add(-time.Second).Format("2006-01-02"),
-			Requests:    prev.Requests,
-			InputTokens: prev.InputTokens,
+			Label:        prevStart.Format("2006-01-02") + " ~ " + prevEnd.Add(-time.Second).Format("2006-01-02"),
+			Sessions:     prev.Sessions,
+			Requests:     prev.Requests,
+			InputTokens:  prev.InputTokens,
 			OutputTokens: prev.OutputTokens,
-			CacheRead:   prev.CacheRead,
-			CreditCost:  prev.Cost,
+			CacheRead:    prev.CacheRead,
+			CreditCost:   prev.Cost,
 		},
 		DeltaPct: delta,
 	}
@@ -129,20 +131,20 @@ func RenderPeriodComparison(pc *model.PeriodComparison) string {
 	prev := pc.Previous
 
 	curM := bucketMetrics{
-		Requests:    cur.Requests,
-		InputTokens: cur.InputTokens,
+		Requests:     cur.Requests,
+		InputTokens:  cur.InputTokens,
 		OutputTokens: cur.OutputTokens,
-		CacheRead:   cur.CacheRead,
-		TotalTokens: cur.InputTokens + cur.OutputTokens + cur.CacheRead,
-		Cost:        cur.CreditCost,
+		CacheRead:    cur.CacheRead,
+		TotalTokens:  cur.InputTokens + cur.OutputTokens + cur.CacheRead,
+		Cost:         cur.CreditCost,
 	}
 	prevM := bucketMetrics{
-		Requests:    prev.Requests,
-		InputTokens: prev.InputTokens,
+		Requests:     prev.Requests,
+		InputTokens:  prev.InputTokens,
 		OutputTokens: prev.OutputTokens,
-		CacheRead:   prev.CacheRead,
-		TotalTokens: prev.InputTokens + prev.OutputTokens + prev.CacheRead,
-		Cost:        prev.CreditCost,
+		CacheRead:    prev.CacheRead,
+		TotalTokens:  prev.InputTokens + prev.OutputTokens + prev.CacheRead,
+		Cost:         prev.CreditCost,
 	}
 
 	var b strings.Builder
@@ -156,15 +158,15 @@ func RenderPeriodComparison(pc *model.PeriodComparison) string {
 		cur  string
 		prev string
 	}{
-		{"Sessions", fmt.Sprintf("%d", cur.Requests), fmt.Sprintf("%d", prev.Requests)},
+		{"Sessions", fmt.Sprintf("%d", cur.Sessions), fmt.Sprintf("%d", prev.Sessions)},
 		{"Requests", fmt.Sprintf("%d", curM.Requests), fmt.Sprintf("%d", prevM.Requests)},
 		{"Input tokens", report.FormatTok(curM.InputTokens), report.FormatTok(prevM.InputTokens)},
 		{"Output tokens", report.FormatTok(curM.OutputTokens), report.FormatTok(prevM.OutputTokens)},
 		{"Cache read", report.FormatTok(curM.CacheRead), report.FormatTok(prevM.CacheRead)},
 		{"Total tokens", report.FormatTok(curM.TotalTokens), report.FormatTok(prevM.TotalTokens)},
 		{"Cost", report.FormatCost(curM.Cost, false), report.FormatCost(prevM.Cost, false)},
-		{"Avg $/session", report.FormatCost(curM.Cost/float64(max1(cur.Requests)), false),
-			report.FormatCost(prevM.Cost/float64(max1(prev.Requests)), false)},
+		{"Avg $/session", report.FormatCost(curM.Cost/float64(max1(cur.Sessions)), false),
+			report.FormatCost(prevM.Cost/float64(max1(prev.Sessions)), false)},
 	}
 	for _, r := range rows {
 		delta := pc.DeltaPct[r.name]

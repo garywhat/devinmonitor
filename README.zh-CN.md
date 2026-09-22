@@ -304,10 +304,12 @@ Devin CLI 的 SQLite schema 是内部实现细节，可能随版本变化。
 | 层级 | 来源 | 使用条件 |
 |------|------|----------|
 | 权威 | `sessions.metadata.total_credit_cost` / `total_acu_cost` | 非零（付费模型） |
+| 用户覆盖 | `<配置目录>/pricing.json` | 已为该模型设置时（优先于内置表） |
 | 估算 | 内置 token x 价格表 | credit 为零（免费模型） |
-| 未来 | 外部定价 API（openrouter 等） | 规划中 |
 
 免费模型（如 `glm-5-2`）在成本列显示 `free`。
+
+定价完全在本地解析，读取时**从不联网**。若将来引入远程价格源，它必须**写入** `pricing.json`，而不是在生成报表时被查询——这样工具离线可用，「无网络」不变式也得以保持。
 
 ## Prometheus 指标
 

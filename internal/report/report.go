@@ -117,9 +117,13 @@ func baseProject(dir string) string {
 	if dir == "" {
 		return "-"
 	}
-	// Use last path component.
-	dir = strings.TrimRight(dir, "/")
-	if i := strings.LastIndex(dir, "/"); i >= 0 {
+	// Use the last path component. BOTH separators count: the data can come
+	// from Windows, and internal/project already split on "\\". Splitting on
+	// "/" alone made the `projects` listing name a directory
+	// "C:\\work\\proj" while the `project` and `git` commands called the same
+	// directory "proj".
+	dir = strings.TrimRight(dir, "/\\")
+	if i := strings.LastIndexAny(dir, "/\\"); i >= 0 {
 		return dir[i+1:]
 	}
 	return dir
@@ -189,23 +193,23 @@ func BuildProjectRows(ss []model.Session) []ProjectRow {
 
 // AgentStats holds subagent usage statistics per profile.
 type AgentStats struct {
-	Profile       string
-	Calls         int
-	Sessions      int   // number of distinct sessions using this profile
-	Background    int   // background calls
-	Foreground    int   // foreground calls
-	ReadCalls     int   // read_subagent calls (main agent waiting for subagent)
-	Completed     int   // calls with a completion notification
-	Durations     []time.Duration // durations for completed calls
-	AvgDuration   time.Duration
-	MaxDuration   time.Duration
-	TaskLens      []int // task description lengths
-	AvgTaskLen    int
-	MaxTaskLen    int
-	OutputLens    []int // completion notification content lengths
-	AvgOutputLen  int
-	MaxOutputLen  int
-	SessionIDs    map[string]bool
+	Profile      string
+	Calls        int
+	Sessions     int             // number of distinct sessions using this profile
+	Background   int             // background calls
+	Foreground   int             // foreground calls
+	ReadCalls    int             // read_subagent calls (main agent waiting for subagent)
+	Completed    int             // calls with a completion notification
+	Durations    []time.Duration // durations for completed calls
+	AvgDuration  time.Duration
+	MaxDuration  time.Duration
+	TaskLens     []int // task description lengths
+	AvgTaskLen   int
+	MaxTaskLen   int
+	OutputLens   []int // completion notification content lengths
+	AvgOutputLen int
+	MaxOutputLen int
+	SessionIDs   map[string]bool
 }
 
 // BuildAgentStats aggregates subagent usage across all sessions, grouped by profile.
@@ -486,26 +490,26 @@ func BuildModelRows(ss []model.Session) []ModelRow {
 // ModelDetail contains detailed stats for a single model.
 type ModelDetail struct {
 	Name         string
-	FirstUsed   time.Time
-	LastUsed    time.Time
-	Sessions    int
-	DaysUsed    int
-	Requests    int
-	InputTok    int64
-	OutputTok   int64
-	CacheRead   int64
-	CacheWrite  int64
-	CreditCost  float64
-	ACUCost     float64
-	EstCost     float64
-	IsFree      bool
-	TTFTP50     float64
-	TTFTP95     float64
-	TotalP50    float64
-	TotalP95    float64
+	FirstUsed    time.Time
+	LastUsed     time.Time
+	Sessions     int
+	DaysUsed     int
+	Requests     int
+	InputTok     int64
+	OutputTok    int64
+	CacheRead    int64
+	CacheWrite   int64
+	CreditCost   float64
+	ACUCost      float64
+	EstCost      float64
+	IsFree       bool
+	TTFTP50      float64
+	TTFTP95      float64
+	TotalP50     float64
+	TotalP95     float64
 	TokPerSecP50 float64
-	TruncPct    float64
-	Tools       []ToolUsageRow
+	TruncPct     float64
+	Tools        []ToolUsageRow
 }
 
 // ToolUsageRow contains per-tool usage stats.
@@ -647,45 +651,45 @@ func BuildModelDetail(ss []model.Session, query string) (*ModelDetail, error) {
 	})
 
 	return &ModelDetail{
-		Name:          matchedName,
-		FirstUsed:     firstUsed,
-		LastUsed:      lastUsed,
-		Sessions:      len(sessionIDs),
-		DaysUsed:      len(daysUsed),
-		Requests:      ms.Requests,
-		InputTok:      ms.InputTokens,
-		OutputTok:     ms.OutputTokens,
-		CacheRead:     ms.CacheRead,
-		CacheWrite:    ms.CacheWrite,
-		CreditCost:    ms.CreditCost,
-		ACUCost:       ms.ACUCost,
-		EstCost:       est,
-		IsFree:        p.Free,
-		TTFTP50:       model.Percentile(ms.TTFTs, 50),
-		TTFTP95:       model.Percentile(ms.TTFTs, 95),
-		TotalP50:      model.Percentile(ms.TotalTimes, 50),
-		TotalP95:      model.Percentile(ms.TotalTimes, 95),
-		TokPerSecP50:  model.Percentile(ms.TokensPerSec, 50),
-		TruncPct:      truncPct,
-		Tools:         tools,
+		Name:         matchedName,
+		FirstUsed:    firstUsed,
+		LastUsed:     lastUsed,
+		Sessions:     len(sessionIDs),
+		DaysUsed:     len(daysUsed),
+		Requests:     ms.Requests,
+		InputTok:     ms.InputTokens,
+		OutputTok:    ms.OutputTokens,
+		CacheRead:    ms.CacheRead,
+		CacheWrite:   ms.CacheWrite,
+		CreditCost:   ms.CreditCost,
+		ACUCost:      ms.ACUCost,
+		EstCost:      est,
+		IsFree:       p.Free,
+		TTFTP50:      model.Percentile(ms.TTFTs, 50),
+		TTFTP95:      model.Percentile(ms.TTFTs, 95),
+		TotalP50:     model.Percentile(ms.TotalTimes, 50),
+		TotalP95:     model.Percentile(ms.TotalTimes, 95),
+		TokPerSecP50: model.Percentile(ms.TokensPerSec, 50),
+		TruncPct:     truncPct,
+		Tools:        tools,
 	}, nil
 }
 
 // ---- Time series (daily / weekly) ----
 
 type TimeRow struct {
-	Label       string
-	Requests    int
-	Sessions    int
-	SubAgents   int
-	InputTok    int64
-	OutputTok   int64
-	CacheRead   int64
-	CacheWrite  int64
-	Cost        float64
+	Label         string
+	Requests      int
+	Sessions      int
+	SubAgents     int
+	InputTok      int64
+	OutputTok     int64
+	CacheRead     int64
+	CacheWrite    int64
+	Cost          float64
 	CostEstimated bool
-	Models      []string
-	ByModel     map[string]*model.ModelStats
+	Models        []string
+	ByModel       map[string]*model.ModelStats
 
 	// Internal bookkeeping for cost provenance.
 	anyCredit   bool // at least one session carried authoritative credit/ACU cost
