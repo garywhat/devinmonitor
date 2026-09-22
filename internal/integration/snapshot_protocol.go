@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/garywhat/devinmonitor/internal/config"
+	"github.com/garywhat/devinmonitor/internal/limit"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/report"
 	"github.com/garywhat/devinmonitor/internal/state"
@@ -100,6 +101,16 @@ func buildProtocolSnapshot(ss []model.Session, now time.Time, opts protocolOpts,
 		}
 	}
 
+	// Local five-hour billing window: the "current window" a user actually
+	// reasons about. It is computed from real block segmentation, and only it
+	// consumes --limit-tokens.
+	if w := fiveHourWindow(ss, now, opts); w != nil {
+		limits["five_hour"] = w
+		if w.UsedPercentage != nil && statusWindow == "" {
+			statusWindow = "five_hour"
+		}
+	}
+
 	// Local monthly window derived from existing configuration.
 	limitHit := false
 	if w := monthlyWindow(ss, now, opts, cfg, sum.MonthCost); w != nil {
@@ -161,23 +172,66 @@ func upstreamWindow(u *state.UpstreamWindow, stale bool, windowSeconds int64, no
 	return w
 }
 
+// fiveHourWindow describes the currently open billing window.
+//
+// Returns nil when no window is active (all activity is older than the window
+// length), so a caller can tell "no current window" from "a window with no
+// limit configured".
+//
+// Only this window consumes --limit-tokens: the flag limits the current
+// billing window, which is the natural reading, and the monthly window is
+// driven by configuration instead.
+func fiveHourWindow(ss []model.Session, now time.Time, opts protocolOpts) *status.Window {
+	if opts.LimitTokens <= 0 {
+		// Without a limit there is no percentage to report for the window, and
+		// the block machinery has nothing to add to the monthly view. Skip it
+		// rather than emitting an empty window that would muddle the output.
+		return nil
+	}
+	blocks := limit.Identify(limit.FromSessions(ss), limit.DefaultWindow, now)
+	active := limit.Active(blocks)
+	if active == nil {
+		return nil
+	}
+
+	windowSeconds := int64(limit.DefaultWindow.Seconds())
+	resetEpoch := active.EndTime.Unix()
+	rs := active.EndTime.UTC().Format(time.RFC3339)
+
+	w := &status.Window{
+		Source:        status.Source{Kind: status.SourceDevinDB},
+		Confidence:    status.ConfidenceEstimate,
+		ResetsAt:      &rs,
+		ResetsAtEpoch: &resetEpoch,
+	}
+	used := active.Tokens.Total()
+	lim := opts.LimitTokens
+	w.TokensUsed, w.TokenLimit = &used, &lim
+
+	if pct := limit.UsedPercent(active, opts.LimitTokens); pct != nil {
+		w.UsedPercentage = pct
+		p := status.ComputePace(pct, &resetEpoch, windowSeconds, now)
+		w.Pace = &p
+		w.Forecast = status.ForecastExhaustion(pct, &resetEpoch, windowSeconds, now)
+	}
+	return w
+}
+
 // monthlyWindow builds the month-to-date usage window from existing config.
 //
-// Percentage precedence: an explicit --limit-tokens wins, then the monthly cost
-// budget. With neither configured we cannot state a percentage, and we say so
-// (nil) instead of inventing one.
+// Percentage precedence: the monthly cost budget. With no budget configured we
+// cannot state a percentage, and we say so (nil) instead of inventing one.
 func monthlyWindow(ss []model.Session, now time.Time, opts protocolOpts, cfg *config.Config, monthCost float64) *status.Window {
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	nextMonth := monthStart.AddDate(0, 1, 0)
 	windowSeconds := int64(nextMonth.Sub(monthStart).Seconds())
 	resetEpoch := nextMonth.Unix()
 
-	var monthTokens, monthACU float64
+	var monthACU float64
 	for _, s := range ss {
 		if !s.LastActivityAt.After(monthStart) {
 			continue
 		}
-		monthTokens += float64(s.InputTokens + s.OutputTokens + s.CacheRead + s.CacheWrite)
 		monthACU += s.ACUCost
 	}
 
@@ -196,12 +250,9 @@ func monthlyWindow(ss []model.Session, now time.Time, opts protocolOpts, cfg *co
 
 	var usedPct float64
 	havePct := true
-	switch {
-	case opts.LimitTokens > 0:
-		usedPct = round1(clampPercent(monthTokens / float64(opts.LimitTokens) * 100))
-	case cfg.BudgetMonthly > 0:
+	if cfg.BudgetMonthly > 0 {
 		usedPct = round1(clampPercent(monthCost / cfg.BudgetMonthly * 100))
-	default:
+	} else {
 		havePct = false
 	}
 
@@ -210,11 +261,6 @@ func monthlyWindow(ss []model.Session, now time.Time, opts protocolOpts, cfg *co
 		p := status.ComputePace(&usedPct, &resetEpoch, windowSeconds, now)
 		w.Pace = &p
 		w.Forecast = status.ForecastExhaustion(&usedPct, &resetEpoch, windowSeconds, now)
-	}
-	if opts.LimitTokens > 0 {
-		used := int64(monthTokens)
-		limit := opts.LimitTokens
-		w.TokensUsed, w.TokenLimit = &used, &limit
 	}
 	if acuLimit > 0 {
 		used := monthACU

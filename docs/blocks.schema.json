@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/garywhat/devinmonitor/main/docs/blocks.schema.json",
+  "title": "devinmonitor blocks",
+  "description": "Machine-readable billing windows emitted by the `devinmonitor` CLI (`devinmonitor blocks --json`) for scripts, tables and CI. The document root is a bare array of block objects, ordered by the producer (typically oldest window first); there is no wrapping object and no document-level metadata. A block is a fixed-length billing window that starts on the hour and aggregates the token usage and cost of every request whose timestamp falls inside it; a gap block instead marks idle time between windows and carries no usage. This schema mirrors the frozen Go `Block`/`TokenCounts` structs field-for-field for the raw counters, and adds the derived presentation fields the CLI computes on top of them (`totalTokens`, `nonCacheTokens`, `usedPercent`, `burnRate`, `projection`); it is generated to match them, so a breaking change to either side is a breaking change to this contract.",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/block"
+  },
+  "$defs": {
+    "block": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One billing window, or a gap standing in for idle time between windows. Every object in this document forbids unknown properties, and a field the CLI always emits is required here: `actualEndTime`, `usedPercent`, `burnRate` and `projection` are the only optional keys, and each of them may be either `null` or omitted.",
+      "required": [
+        "id",
+        "startTime",
+        "endTime",
+        "isActive",
+        "isGap",
+        "models",
+        "cost",
+        "tokens",
+        "totalTokens",
+        "nonCacheTokens"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^(gap-)?[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$",
+          "description": "Stable identifier for the block, in exactly two shapes: for a real window it is the RFC3339 timestamp of `startTime`, and for a gap block it is the literal prefix `gap-` followed by that same RFC3339 string (for example `2026-09-21T00:00:00Z` and `gap-2026-09-21T05:00:00Z`). Keying on the start instant keeps the identifier stable across runs and across later corrections to the block's contents, so it is safe to use as a join key."
+        },
+        "startTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC3339 timestamp, in UTC, at which the window opens. Windows start on the hour, so a block boundary is always an exact hour."
+        },
+        "endTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC3339 timestamp, in UTC, at which the window closes: `startTime` plus the fixed window length. For a window that is still current this is the scheduled end, not the end of usage observed so far."
+        },
+        "actualEndTime": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "RFC3339 timestamp of the last usage observed inside the window, which may be earlier than `endTime` when the window closed early. Optional and nullable: `null` (or omitted) when there is no such timestamp, in particular for gap blocks, which carry no usage. `null` means \"no observed usage boundary\", not the Go zero time and not \"midnight\"."
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "True when this window is the one still current at generation time, i.e. the clock is inside `[startTime, endTime)`. At most one block in the document is active, and gap blocks are never active."
+        },
+        "isGap": {
+          "type": "boolean",
+          "description": "True when this block represents idle time between two windows rather than a window with usage. A gap block carries zero token counts, zero `cost`, an empty `models` array and no `burnRate`/`projection`. The implication is documented rather than enforced: the schema deliberately does not require `models` to be empty or the counters to be zero when `isGap` is true, so a producer that emits a slightly inconsistent gap block is still schema-valid and the inconsistency is a data question, not a document error."
+        },
+        "models": {
+          "type": "array",
+          "description": "Model identifiers that produced usage inside this window, in the producer's order (typically largest share first). Always an array and never `null`; empty when no usage was recorded, which is always the case for gap blocks.",
+          "items": {
+            "type": "string",
+            "description": "Model identifier as recorded in the Devin CLI usage database."
+          }
+        },
+        "cost": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cost attributed to this window in the configured currency, summed from the per-request prices (0.0 on a free-tier plan, and 0.0 for gap blocks)."
+        },
+        "tokens": {
+          "$ref": "#/$defs/tokens",
+          "description": "Raw token counters for this window. These four fields are the source of truth; `totalTokens` and `nonCacheTokens` are derived from them."
+        },
+        "totalTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Cache-inclusive token total for this window, equal to `tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite`. 0 for gap blocks. This is the figure the billing window is measured in, so it is the one to compare against a token limit."
+        },
+        "nonCacheTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Token total counting only new work, equal to `tokens.input + tokens.output`. Cache reads and cache writes are excluded because a cache hit is not new work; this is the figure to use for \"work done\" comparisons and for rate displays. 0 for gap blocks."
+        },
+        "usedPercent": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Share of the window's token limit already consumed, as a percentage between 0 and 100 inclusive. Optional and nullable: the value is only meaningful when an explicit token limit is configured, so it is `null` (or omitted) when no limit exists. Never infer a limit from this value, and never treat `null` as 0."
+        },
+        "burnRate": {
+          "$ref": "#/$defs/burnRate",
+          "description": "Optional recent consumption rate for this window. Absent (or `null`) for gap blocks and for windows with no usage to rate, and also absent when the rate could not be computed."
+        },
+        "projection": {
+          "$ref": "#/$defs/projection",
+          "description": "Optional extrapolation of the window to its scheduled end. Emitted only for the active window, and only when a rate could be computed; absent (or `null`) for finished windows, gap blocks and empty windows. It is a local linear extrapolation from the data available at generation time, so it is an estimate, not official accounting data."
+        }
+      }
+    },
+    "tokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Raw token counters for one window, mirroring the Go `TokenCounts` struct field-for-field. All four counters are non-negative and are always emitted, as 0 rather than omitted.",
+      "required": [
+        "input",
+        "output",
+        "cacheRead",
+        "cacheWrite"
+      ],
+      "properties": {
+        "input": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Uncached prompt (input) tokens sent to the model."
+        },
+        "output": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Completion (output) tokens produced by the model."
+        },
+        "cacheRead": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Prompt tokens served from the prompt cache. These are real tokens billed by the provider, but they represent cache hits rather than new work, which is why the user-facing rate (`tokensPerMinuteDisplay`) leaves them out."
+        },
+        "cacheWrite": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Prompt tokens written into the prompt cache."
+        }
+      }
+    },
+    "burnRate": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Recent consumption rate for one block, used for the burn-rate display and as the input to `projection`. Rates are measured over the observed part of the window, so they are only emitted once there is usage and elapsed time to divide by.",
+      "required": [
+        "tokensPerMinute",
+        "tokensPerMinuteDisplay",
+        "costPerHour"
+      ],
+      "properties": {
+        "tokensPerMinute": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cache-inclusive tokens per minute over the observed part of the window, consistent with `totalTokens`."
+        },
+        "tokensPerMinuteDisplay": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Tokens per minute as shown to the user: the `nonCacheTokens` rate, i.e. `tokensPerMinute` with cache reads excluded, because cache hits are not new work and would otherwise inflate the displayed figure."
+        },
+        "costPerHour": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cost per hour implied by the same observed rate, in the configured currency."
+        }
+      }
+    },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Local linear extrapolation of the active window to its scheduled end, computed from the window's `burnRate` and the time remaining. Only present for the active window. It is an estimate produced by the CLI from the data available at generation time, not official accounting data, and it changes on every run.",
+      "required": [
+        "totalTokens",
+        "totalCost",
+        "remainingMinutes"
+      ],
+      "properties": {
+        "totalTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Projected cache-inclusive token total for the window at its scheduled end: the tokens already used plus `burnRate.tokensPerMinute × remainingMinutes`, rounded to a whole number."
+        },
+        "totalCost": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Projected cost for the window at its scheduled end, in the configured currency, extrapolated the same way."
+        },
+        "remainingMinutes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Whole minutes left until the scheduled `endTime`, measured from the generation timestamp. Non-negative; it shrinks on every run and reaches 0 as the window closes."
+        }
+      }
+    }
+  }
+}

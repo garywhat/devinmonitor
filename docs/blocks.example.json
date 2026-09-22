@@ -1,0 +1,87 @@
+[
+  {
+    "id": "2026-09-21T00:00:00Z",
+    "startTime": "2026-09-21T00:00:00Z",
+    "endTime": "2026-09-21T05:00:00Z",
+    "actualEndTime": "2026-09-21T04:52:00Z",
+    "isActive": false,
+    "isGap": false,
+    "models": ["devin-v2", "devin-lite"],
+    "cost": 4.18,
+    "tokens": {
+      "input": 182400,
+      "output": 74600,
+      "cacheRead": 1204800,
+      "cacheWrite": 96300
+    },
+    "totalTokens": 1558100,
+    "nonCacheTokens": 257000,
+    "usedPercent": null
+  },
+  {
+    "id": "gap-2026-09-21T05:00:00Z",
+    "startTime": "2026-09-21T05:00:00Z",
+    "endTime": "2026-09-21T10:00:00Z",
+    "actualEndTime": null,
+    "isActive": false,
+    "isGap": true,
+    "models": [],
+    "cost": 0.0,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "totalTokens": 0,
+    "nonCacheTokens": 0,
+    "usedPercent": null
+  },
+  {
+    "id": "2026-09-21T10:00:00Z",
+    "startTime": "2026-09-21T10:00:00Z",
+    "endTime": "2026-09-21T15:00:00Z",
+    "actualEndTime": "2026-09-21T14:58:00Z",
+    "isActive": false,
+    "isGap": false,
+    "models": ["devin-v2"],
+    "cost": 1.07,
+    "tokens": {
+      "input": 46200,
+      "output": 18900,
+      "cacheRead": 305600,
+      "cacheWrite": 21400
+    },
+    "totalTokens": 392100,
+    "nonCacheTokens": 65100
+  },
+  {
+    "id": "2026-09-21T15:00:00Z",
+    "startTime": "2026-09-21T15:00:00Z",
+    "endTime": "2026-09-21T20:00:00Z",
+    "actualEndTime": "2026-09-21T18:45:00Z",
+    "isActive": true,
+    "isGap": false,
+    "models": ["devin-v2", "devin-lite"],
+    "cost": 3.48,
+    "tokens": {
+      "input": 138000,
+      "output": 60500,
+      "cacheRead": 916000,
+      "cacheWrite": 76500
+    },
+    "totalTokens": 1191000,
+    "nonCacheTokens": 198500,
+    "usedPercent": 57.8,
+    "burnRate": {
+      "tokensPerMinute": 5293.3,
+      "tokensPerMinuteDisplay": 882.2,
+      "costPerHour": 0.93
+    },
+    "projection": {
+      "totalTokens": 1588000,
+      "totalCost": 4.64,
+      "remainingMinutes": 75
+    }
+  }
+]

@@ -23,6 +23,7 @@ import (
 
 	// Feature packages self-register commands via cli.Register() in init().
 	_ "github.com/garywhat/devinmonitor/internal/analytics"
+	_ "github.com/garywhat/devinmonitor/internal/blocks"
 	_ "github.com/garywhat/devinmonitor/internal/budget"
 	_ "github.com/garywhat/devinmonitor/internal/filterexport"
 	_ "github.com/garywhat/devinmonitor/internal/integration"
@@ -180,6 +181,7 @@ func buildOrderedCommands() []cmdEntry {
 		// --- Cost & Budget ---
 		feat("cost"), feat("budget"), feat("burn-rate"), feat("projection"),
 		feat("top-cost"), feat("plan"), feat("currency"),
+		feat("blocks"),
 
 		// --- Analytics ---
 		feat("cache"), feat("efficiency"), feat("tasks"), feat("optimize"),
