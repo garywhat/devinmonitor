@@ -11,61 +11,150 @@ import (
 	"github.com/garywhat/devinmonitor/internal/config"
 	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
+	"github.com/garywhat/devinmonitor/internal/reader"
 	"github.com/garywhat/devinmonitor/internal/report"
+	"github.com/garywhat/devinmonitor/internal/state"
+	"github.com/garywhat/devinmonitor/internal/status"
 	"github.com/garywhat/devinmonitor/internal/ui"
 )
 
 // ---- Snapshot Command (#81) ----
 
 var cmdSnapshot = func() *cobra.Command {
-	return &cobra.Command{
+	var (
+		asJSON     bool
+		compact    bool
+		statusline bool
+		writeState bool
+		stateFile  string
+		semExit    bool
+		limitTok   int64
+		limitACU   float64
+	)
+	c := &cobra.Command{
 		Use:   "snapshot",
 		Short: i18n.T("cmd.snapshot"),
 		Run: func(cmd *cobra.Command, args []string) {
-			r := openReader(cmd)
+			// A statusline payload on stdin is an authoritative source, so it
+			// must be captured before the snapshot is assembled.
+			if statusline {
+				captureUpstreamStatusline()
+			}
+
+			now := time.Now()
+			cfg := config.Global()
+
+			r, err := reader.Open(dataDirFrom(cmd))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%v\n", err)
+				os.Exit(snapshotFailureCode(semExit))
+			}
 			defer r.Close()
 			ss, err := r.Sessions()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
-				os.Exit(1)
+				os.Exit(snapshotFailureCode(semExit))
 			}
-			sum := computeCostSummary(ss)
-			cfg := config.Global()
 
-			// Active sessions table.
-			now := time.Now()
-			var active []model.Session
-			for _, s := range ss {
-				if now.Sub(s.LastActivityAt) < 5*time.Minute {
-					active = append(active, s)
+			snap := buildProtocolSnapshot(ss, now, protocolOpts{
+				LimitTokens: limitTok,
+				LimitACU:    limitACU,
+			}, cfg)
+
+			if writeState {
+				path := stateFile
+				if path == "" {
+					path = state.DefaultStatePath()
+				}
+				data, err := status.EncodeJSON(snap)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "encode snapshot: %v\n", err)
+					os.Exit(snapshotFailureCode(semExit))
+				}
+				if err := state.WriteAtomic(path, data); err != nil {
+					fmt.Fprintf(os.Stderr, "write state: %v\n", err)
+					os.Exit(snapshotFailureCode(semExit))
 				}
 			}
 
-			fmt.Println(ui.Panel("DevinMonitor Status", fmt.Sprintf(
-				"Active sessions:  %d\nToday's cost:     $%.2f  [%s]\nWeek's cost:      $%.2f\nMonth's cost:     $%.2f\nTotal cost:       $%.2f\nTotal sessions:   %d\nTotal requests:   %d\nBudget daily:     $%.2f\nBudget monthly:   $%.2f\nACU rate:         %.2f USD/ACU\nPlan:             %s",
-				sum.ActiveSess,
-				sum.TodayCost, sum.Provenance,
-				sum.WeekCost,
-				sum.MonthCost,
-				sum.TotalCost,
-				sum.TotalSess,
-				sum.TotalReqs,
-				cfg.BudgetDaily,
-				cfg.BudgetMonthly,
-				cfg.ACURate,
-				cfg.Plan,
-			), 60))
-
-			if len(active) > 0 {
-				fmt.Println()
-				t := ui.NewTable("ID", "Title", "Model", "Last Activity")
-				for _, s := range active {
-					ago := now.Sub(s.LastActivityAt).Round(time.Second)
-					t.Row(s.ID, s.Title, s.Model, fmt.Sprintf("%s ago", ago))
+			switch {
+			case asJSON, compact, statusline:
+				if asJSON {
+					data, err := status.EncodeJSON(snap)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "encode snapshot: %v\n", err)
+						os.Exit(snapshotFailureCode(semExit))
+					}
+					_, _ = os.Stdout.Write(data)
+				} else {
+					fmt.Println(status.RenderCompact(snap))
 				}
-				fmt.Println(t.String())
+			default:
+				renderSnapshotPanel(ss, now, cfg)
+			}
+
+			if semExit {
+				os.Exit(snap.Status.Code)
 			}
 		},
+	}
+	c.Flags().BoolVar(&asJSON, "json", false, i18n.T("help.snapJSON"))
+	c.Flags().BoolVar(&compact, "compact", false, i18n.T("help.snapCompact"))
+	c.Flags().BoolVar(&statusline, "statusline", false, i18n.T("help.snapStatusline"))
+	c.Flags().BoolVar(&writeState, "write-state", false, i18n.T("help.snapState"))
+	c.Flags().StringVar(&stateFile, "state-file", "", i18n.T("help.snapStateFile"))
+	c.Flags().BoolVar(&semExit, "exit-code", false, i18n.T("help.snapExitCode"))
+	c.Flags().Int64Var(&limitTok, "limit-tokens", 0, i18n.T("help.snapLimitTokens"))
+	c.Flags().Float64Var(&limitACU, "limit-acu", 0, i18n.T("help.snapLimitACU"))
+	return c
+}
+
+// snapshotFailureCode picks the exit code for a fatal failure: the protocol's
+// "no data or config error" code when semantic exit codes were requested, and
+// the conventional 1 otherwise.
+func snapshotFailureCode(semantic bool) int {
+	if semantic {
+		return status.CodeNoData
+	}
+	return 1
+}
+
+// renderSnapshotPanel prints the human-facing snapshot panel. This is the
+// command's original output and is kept byte-for-byte compatible when no
+// protocol flags are passed.
+func renderSnapshotPanel(ss []model.Session, now time.Time, cfg *config.Config) {
+	sum := computeCostSummary(ss)
+
+	var active []model.Session
+	for _, s := range ss {
+		if now.Sub(s.LastActivityAt) < 5*time.Minute {
+			active = append(active, s)
+		}
+	}
+
+	fmt.Println(ui.Panel("DevinMonitor Status", fmt.Sprintf(
+		"Active sessions:  %d\nToday's cost:     $%.2f  [%s]\nWeek's cost:      $%.2f\nMonth's cost:     $%.2f\nTotal cost:       $%.2f\nTotal sessions:   %d\nTotal requests:   %d\nBudget daily:     $%.2f\nBudget monthly:   $%.2f\nACU rate:         %.2f USD/ACU\nPlan:             %s",
+		sum.ActiveSess,
+		sum.TodayCost, sum.Provenance,
+		sum.WeekCost,
+		sum.MonthCost,
+		sum.TotalCost,
+		sum.TotalSess,
+		sum.TotalReqs,
+		cfg.BudgetDaily,
+		cfg.BudgetMonthly,
+		cfg.ACURate,
+		cfg.Plan,
+	), 60))
+
+	if len(active) > 0 {
+		fmt.Println()
+		t := ui.NewTable("ID", "Title", "Model", "Last Activity")
+		for _, s := range active {
+			ago := now.Sub(s.LastActivityAt).Round(time.Second)
+			t.Row(s.ID, s.Title, s.Model, fmt.Sprintf("%s ago", ago))
+		}
+		fmt.Println(t.String())
 	}
 }
 

@@ -1,0 +1,325 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/garywhat/devinmonitor/main/docs/snapshot.schema.json",
+  "title": "devinmonitor snapshot",
+  "description": "Machine-readable snapshot emitted by the `devinmonitor` CLI (`devinmonitor snapshot --once --output json`) for scripts, status bars and CI. The document is a strict machine contract: every object forbids unknown properties, and a field that Go marshals without `omitempty` is required here. This schema mirrors the frozen Go structs field-for-field; it is generated to match them, so a breaking change to either side requires bumping `schemaVersion`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "status",
+    "limits",
+    "breakdown"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "description": "Version of this snapshot document format. Starts at 1 and is incremented on any breaking change to the shape of the document, so consumers can branch on it before parsing the rest."
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC3339 timestamp, in UTC, at which the snapshot was produced. Used by consumers to detect a frozen or stale producer."
+    },
+    "status": {
+      "$ref": "#/$defs/statusBlock",
+      "description": "Overall, pre-computed verdict for the whole snapshot (not per window), suitable for direct use as a process exit code and status-bar text."
+    },
+    "limits": {
+      "type": "object",
+      "description": "Per-window usage and limit information, keyed by window name. `five_hour` is the conventional key for the rolling five-hour window; `seven_day` is the conventional key for the rolling weekly window. Additional keys are allowed as long as they follow the `propertyNames` pattern, and every value has the same `Window` shape.",
+      "propertyNames": {
+        "pattern": "^(five_hour|seven_day|monthly|daily|session|weekly|[a-z][a-z0-9_]{0,63})$",
+        "description": "Window key. The documented names are `five_hour` (the conventional key for the rolling five-hour window), `seven_day`, `monthly`, `daily`, `session` and `weekly`; the generic branch also permits any other lowercase snake_case identifier of up to 64 characters, so new windows can be added without a schema change."
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/window"
+      }
+    },
+    "breakdown": {
+      "$ref": "#/$defs/breakdown",
+      "description": "Cost, token and session aggregates for the current snapshot period, including the per-model breakdown table."
+    }
+  },
+  "$defs": {
+    "statusBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Pre-computed status verdict for the whole snapshot.",
+      "required": [
+        "code",
+        "label"
+      ],
+      "properties": {
+        "code": {
+          "type": "integer",
+          "enum": [0, 10, 11, 20, 30],
+          "description": "Semantic status code, also used as the process exit code when run with `--exit-code`: 0 = ok (usage normal), 10 = near_limit (usedPercentage >= warning threshold, default 80), 11 = limit_hit (usedPercentage >= 100 or the upstream explicitly flagged an overage), 20 = indeterminate / no active session (usage could not be determined), 30 = no data or config error (usage database missing or unreadable, invalid configuration)."
+        },
+        "label": {
+          "type": "string",
+          "enum": ["ok", "near_limit", "limit_hit", "indeterminate", "no_active_session"],
+          "description": "Human-readable label matching `code`: `ok`, `near_limit`, `limit_hit`, `indeterminate` or `no_active_session`. Both `indeterminate` and `no_active_session` correspond to code 20."
+        }
+      }
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Usage and limit state for one usage window (e.g. `five_hour`). Nullable numeric fields are `null` when the value is unknown or was discarded by defensive sanitisation (NaN, infinite, implausibly out-of-range or epoch-scale values), so consumers must treat `null` as \"unknown\" rather than zero.",
+      "required": [
+        "usedPercentage",
+        "tokensUsed",
+        "tokenLimit",
+        "acuUsed",
+        "acuLimit",
+        "resetsAt",
+        "resetsAtEpoch",
+        "source",
+        "confidence",
+        "stale"
+      ],
+      "properties": {
+        "usedPercentage": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Share of the window's limit already consumed, as a percentage between 0 and 100 inclusive (slightly over 100 from upstream is clamped to 100). `null` when no limit is configured or the value is unknown."
+        },
+        "tokensUsed": {
+          "type": ["integer", "null"],
+          "description": "Tokens consumed inside this window. `null` when unknown."
+        },
+        "tokenLimit": {
+          "type": ["integer", "null"],
+          "description": "Token budget for this window, from configuration or the upstream plan. `null` when no limit is configured, in which case no percentage or pace is emitted."
+        },
+        "acuUsed": {
+          "type": ["number", "null"],
+          "description": "ACU (Devin's account credit unit) consumed inside this window. `null` when unknown or when the plan does not account in ACU."
+        },
+        "acuLimit": {
+          "type": ["number", "null"],
+          "description": "ACU budget for this window. `null` when no ACU limit is configured."
+        },
+        "resetsAt": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "RFC3339 timestamp at which this window resets. `null` when the reset time is unknown."
+        },
+        "resetsAtEpoch": {
+          "type": ["integer", "null"],
+          "description": "Unix epoch seconds for the same reset instant as `resetsAt`, provided for consumers that prefer an integer. `null` when the reset time is unknown."
+        },
+        "source": {
+          "$ref": "#/$defs/source",
+          "description": "Where the values in this window were read from."
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence",
+          "description": "How much this window's numbers can be trusted. `official` means the value came from Devin's own credit/ACU accounting; `estimated` means the number was derived from token pricing rather than the tool's own accounting (local math over the Devin database); `unknown` means no usable provenance could be established and the numbers should be treated as a guess."
+        },
+        "stale": {
+          "type": "boolean",
+          "description": "True when the underlying upstream capture exceeded its 600s TTL (OfficialTTLSeconds): the snapshot is still emitted for consumers, but the upstream accounting has been downgraded to a local estimate and must not be treated as current."
+        },
+        "pace": {
+          "$ref": "#/$defs/pace",
+          "description": "Optional consumption-pace comparison against elapsed window time. Absent when no limit is configured or the value could not be computed."
+        },
+        "forecast": {
+          "$ref": "#/$defs/forecast",
+          "description": "Optional projection of when this window's limit will be exhausted. Absent when no limit is configured, the window is not burning, or the projection could not be computed."
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Provenance of the raw values that produced a window.",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["devin_db", "statusline", "config"],
+          "description": "Origin of the values: `devin_db` = read from the local Devin CLI database, `statusline` = captured from an upstream status-line payload on stdin (subject to the 600s TTL), `config` = supplied by devinmonitor configuration."
+        }
+      }
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["official", "estimated", "unknown"],
+      "description": "Trust level for a group of numbers, using the vocabulary already established by the tool's provenance helpers. `official` = taken from Devin's own accounting (credit/ACU). `estimated` = derived from token pricing rather than the tool's own credit/ACU accounting, i.e. computed locally from tokens and a price table. `unknown` = no usable provenance. Separate from this enum value, the presentation layer must render a literal `(estimated)` suffix on any number whose confidence is not `official` (so both `estimated` and `unknown` are suffixed); that suffix is a display convention, not an enum value."
+    },
+    "pace": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Comparison between how much of the window's budget has been consumed and how much of the window's clock has elapsed (delta = usedPercentage - elapsedPercentage, tolerance 10 points).",
+      "required": [
+        "label",
+        "usedPercentage",
+        "elapsedPercentage"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "enum": ["on track", "slow down", "speed up", "unknown"],
+          "description": "Pace verdict, where the parenthesised note is the compared direction: `on track` = consumption within tolerance of elapsed time, `slow down` = burning faster than the window elapses (delta > +10 points), `speed up` = burning slower than the window elapses (delta < -10 points), `unknown` = not enough information."
+        },
+        "usedPercentage": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Share of the limit consumed at snapshot time, as a percentage between 0 and 100 inclusive, mirroring `Window.usedPercentage`. `null` when unknown."
+        },
+        "elapsedPercentage": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Share of the window's duration that has already elapsed, as a percentage between 0 and 100 inclusive. `null` when the window bounds are unknown."
+        }
+      }
+    },
+    "forecast": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Projection of when the current window's limit will be reached, based on the current burn rate.",
+      "required": [
+        "exhaustedAt",
+        "display"
+      ],
+      "properties": {
+        "exhaustedAt": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "RFC3339 timestamp at which the limit is projected to be exhausted. `null` when no projection exists."
+        },
+        "display": {
+          "type": ["string", "null"],
+          "description": "Human-readable form of `exhaustedAt` for direct rendering (for example `today 14:30 (estimated)`). When present it always contains the literal `(estimated)` suffix, because a projection is never official. `null` when there is nothing to display."
+        }
+      }
+    },
+    "breakdown": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Aggregate cost, token and session statistics for the snapshot period, plus the per-model rows behind them.",
+      "required": [
+        "byModel",
+        "acu",
+        "costProvenance",
+        "todayCost",
+        "weekCost",
+        "monthCost",
+        "totalCost",
+        "totalSessions",
+        "totalRequests",
+        "totalTokens",
+        "activeSessions"
+      ],
+      "properties": {
+        "byModel": {
+          "type": "array",
+          "description": "Per-model usage rows, ordered by the producer (typically largest share first). Empty when no usage was recorded.",
+          "items": {
+            "$ref": "#/$defs/modelRow"
+          }
+        },
+        "acu": {
+          "type": "boolean",
+          "description": "True when ACU accounting is in use for this plan, i.e. the ACU figures in `limits` are meaningful."
+        },
+        "costProvenance": {
+          "$ref": "#/$defs/confidence",
+          "description": "Trust level of the cost figures in this breakdown. `official` = reported by Devin's own accounting; `estimated` = derived from token pricing rather than the tool's own accounting; `unknown` = no usable provenance. On a free-tier plan, costs are legitimately 0.0 with any provenance."
+        },
+        "todayCost": {
+          "type": "number",
+          "description": "Cost attributed to the current local day, in the configured currency (0.0 on a free-tier plan)."
+        },
+        "weekCost": {
+          "type": "number",
+          "description": "Cost attributed to the current week, in the configured currency (0.0 on a free-tier plan)."
+        },
+        "monthCost": {
+          "type": "number",
+          "description": "Cost attributed to the current calendar month, in the configured currency (0.0 on a free-tier plan)."
+        },
+        "totalCost": {
+          "type": "number",
+          "description": "All-time cost across the analysed database, in the configured currency (0.0 on a free-tier plan)."
+        },
+        "totalSessions": {
+          "type": "integer",
+          "description": "Number of sessions recorded in the analysed database."
+        },
+        "totalRequests": {
+          "type": "integer",
+          "description": "Total number of model requests, the sum of `requests` across `byModel`."
+        },
+        "totalTokens": {
+          "type": "integer",
+          "description": "Total tokens counted for the period (input + output, per the same convention as `share`)."
+        },
+        "activeSessions": {
+          "type": "integer",
+          "description": "Number of sessions considered active at `generatedAt`."
+        }
+      }
+    },
+    "modelRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Usage attributed to a single model.",
+      "required": [
+        "model",
+        "inputTokens",
+        "outputTokens",
+        "cacheReadTokens",
+        "cacheWriteTokens",
+        "requests",
+        "cost",
+        "share"
+      ],
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "Model identifier as recorded in the Devin CLI usage database."
+        },
+        "inputTokens": {
+          "type": "integer",
+          "description": "Uncached prompt (input) tokens sent to this model."
+        },
+        "outputTokens": {
+          "type": "integer",
+          "description": "Completion (output) tokens produced by this model."
+        },
+        "cacheReadTokens": {
+          "type": "integer",
+          "description": "Prompt tokens served from the prompt cache for this model."
+        },
+        "cacheWriteTokens": {
+          "type": "integer",
+          "description": "Prompt tokens written into the prompt cache for this model."
+        },
+        "requests": {
+          "type": "integer",
+          "description": "Number of model requests attributed to this model."
+        },
+        "cost": {
+          "type": "number",
+          "description": "Cost attributed to this model in the configured currency (0.0 on a free-tier plan)."
+        },
+        "share": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "This model's percentage of the total (input + output) tokens across all rows, between 0 and 100 inclusive; the shares of all rows sum to approximately 100."
+        }
+      }
+    }
+  }
+}

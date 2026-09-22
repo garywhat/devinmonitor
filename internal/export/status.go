@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/garywhat/devinmonitor/internal/model"
+	"github.com/garywhat/devinmonitor/internal/state"
 )
 
 // StatusSnapshot is a compact usage snapshot used by status-bar integrations.
@@ -69,27 +69,18 @@ func SetTerminalTitle(w io.Writer, title string) {
 
 // WriteState writes a status snapshot atomically to a state file (JSON).
 // The parent directory is created if missing.
+//
+// The write is delegated to state.WriteAtomic, which uses a pid- and
+// random-suffixed temp file. A fixed "<path>.tmp" name (the previous
+// implementation) let two concurrent writers clobber each other's temp file,
+// so a reader could observe a torn document.
 func WriteState(snap StatusSnapshot, path string) error {
 	if path == "" {
 		return fmt.Errorf("state file path is empty")
-	}
-	if err := os.MkdirAll(parentDir(path), 0o755); err != nil {
-		return err
 	}
 	data, err := json.MarshalIndent(snap, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
-func parentDir(p string) string {
-	if i := strings.LastIndexAny(p, "/\\"); i >= 0 {
-		return p[:i]
-	}
-	return "."
+	return state.WriteAtomic(path, data)
 }

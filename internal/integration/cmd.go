@@ -58,14 +58,14 @@ func watchLoop(interval time.Duration, fn func() error) {
 
 // costSummary holds aggregated cost data for status/web/MCP.
 type costSummary struct {
-	TotalCost   float64 `json:"totalCost"`
-	TodayCost   float64 `json:"todayCost"`
-	WeekCost    float64 `json:"weekCost"`
-	MonthCost   float64 `json:"monthCost"`
-	TotalReqs   int     `json:"totalRequests"`
-	TotalSess   int     `json:"totalSessions"`
-	ActiveSess  int     `json:"activeSessions"`
-	Provenance  string  `json:"provenance"`
+	TotalCost  float64 `json:"totalCost"`
+	TodayCost  float64 `json:"todayCost"`
+	WeekCost   float64 `json:"weekCost"`
+	MonthCost  float64 `json:"monthCost"`
+	TotalReqs  int     `json:"totalRequests"`
+	TotalSess  int     `json:"totalSessions"`
+	ActiveSess int     `json:"activeSessions"`
+	Provenance string  `json:"provenance"`
 }
 
 // computeCostSummary aggregates cost data from sessions.
@@ -77,6 +77,7 @@ func computeCostSummary(ss []model.Session) costSummary {
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 
 	sum.TotalSess = len(ss)
+	official, estimated := 0, 0
 	for _, s := range ss {
 		cost, _ := report.SessionCost(&s)
 		sum.TotalCost += cost
@@ -94,9 +95,33 @@ func computeCostSummary(ss []model.Session) costSummary {
 		if now.Sub(s.LastActivityAt) < 5*time.Minute {
 			sum.ActiveSess++
 		}
+		// Grade where the cost figure came from: Devin's own credit/ACU
+		// accounting is authoritative; anything else is derived from the
+		// built-in token pricing table.
+		if s.CreditCost > 0 || s.ACUCost > 0 {
+			official++
+		} else {
+			estimated++
+		}
 	}
-	sum.Provenance = "mixed"
+	sum.Provenance = provenanceFrom(official, estimated)
 	return sum
+}
+
+// provenanceFrom grades the aggregate cost provenance. The vocabulary
+// ("official" / "estimated" / "mixed") matches provenanceLabel and
+// provenanceTag so a single tool never speaks two dialects.
+func provenanceFrom(official, estimated int) string {
+	switch {
+	case official == 0 && estimated == 0:
+		return "unknown"
+	case official > 0 && estimated > 0:
+		return "mixed"
+	case official > 0:
+		return "official"
+	default:
+		return "estimated"
+	}
 }
 
 func init() {

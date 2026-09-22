@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-22T02:00:00Z",
+  "status": {
+    "code": 0,
+    "label": "ok"
+  },
+  "limits": {
+    "five_hour": {
+      "usedPercentage": 62.0,
+      "tokensUsed": 266600,
+      "tokenLimit": 430000,
+      "acuUsed": 12.3,
+      "acuLimit": 50,
+      "resetsAt": "2026-09-22T05:00:00Z",
+      "resetsAtEpoch": 1790053200,
+      "source": {
+        "kind": "devin_db"
+      },
+      "confidence": "estimated",
+      "stale": false,
+      "pace": {
+        "label": "slow down",
+        "usedPercentage": 62.0,
+        "elapsedPercentage": 38.0
+      },
+      "forecast": {
+        "exhaustedAt": "2026-09-22T03:48:00Z",
+        "display": "today 11:48 (estimated)"
+      }
+    },
+    "seven_day": {
+      "usedPercentage": null,
+      "tokensUsed": null,
+      "tokenLimit": null,
+      "acuUsed": null,
+      "acuLimit": null,
+      "resetsAt": "2026-09-28T00:00:00Z",
+      "resetsAtEpoch": 1790553600,
+      "source": {
+        "kind": "statusline"
+      },
+      "confidence": "unknown",
+      "stale": true
+    }
+  },
+  "breakdown": {
+    "byModel": [
+      {
+        "model": "devin-v2",
+        "inputTokens": 980000,
+        "outputTokens": 420000,
+        "cacheReadTokens": 310000,
+        "cacheWriteTokens": 52000,
+        "requests": 168,
+        "cost": 0.0,
+        "share": 57.0
+      },
+      {
+        "model": "devin-lite",
+        "inputTokens": 720000,
+        "outputTokens": 336000,
+        "cacheReadTokens": 190000,
+        "cacheWriteTokens": 41000,
+        "requests": 144,
+        "cost": 0.0,
+        "share": 43.0
+      }
+    ],
+    "acu": true,
+    "costProvenance": "estimated",
+    "todayCost": 0.0,
+    "weekCost": 0.0,
+    "monthCost": 0.0,
+    "totalCost": 0.0,
+    "totalSessions": 47,
+    "totalRequests": 312,
+    "totalTokens": 2456000,
+    "activeSessions": 1
+  }
+}
