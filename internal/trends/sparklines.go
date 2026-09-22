@@ -10,9 +10,11 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/garywhat/devinmonitor/internal/config"
 	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/report"
+	"github.com/garywhat/devinmonitor/internal/state"
 	"github.com/garywhat/devinmonitor/internal/ui"
 )
 
@@ -25,9 +27,14 @@ type snapshot struct {
 	When   string  `json:"when"`
 }
 
-// snapshotPath returns the temp file used to store the last snapshot.
+// snapshotPath returns the file used to store the last snapshot.
+//
+// It lives under the config directory rather than os.TempDir(): a fixed name in
+// the shared temp directory is global to the whole machine, so two users (or
+// two sandboxes) would clobber each other's delta baseline, and it litters /tmp
+// with a file nobody cleans up.
 func snapshotPath() string {
-	return filepath.Join(os.TempDir(), "devinmonitor_snapshot.json")
+	return filepath.Join(filepath.Dir(config.Path()), "state", "trends-delta.json")
 }
 
 // loadSnapshot reads the previous snapshot. Returns a zero snapshot if
@@ -43,12 +50,14 @@ func loadSnapshot() snapshot {
 }
 
 // saveSnapshot persists the current snapshot for the next run.
+// Written atomically so a concurrent reader never sees a half-written delta
+// baseline (the file is read on every `trends` run).
 func saveSnapshot(sn snapshot) error {
 	data, err := json.Marshal(sn)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(snapshotPath(), data, 0644)
+	return state.WriteAtomic(snapshotPath(), data)
 }
 
 // currentTotals computes total cost and tokens across all sessions.

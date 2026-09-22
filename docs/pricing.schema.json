@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/garywhat/devinmonitor/main/docs/pricing.schema.json",
+  "title": "devinmonitor pricing overrides",
+  "description": "Hand-editable model price-override file for `devinmonitor`, read from `<config dir>/pricing.json` (default `~/.devinmonitor/pricing.json`, relocated by `DEVINMONITOR_CONFIG_DIR`). It lets a user correct or add a model's pricing locally, without rebuilding the binary: each entry names a model and gives the four per-million-token rates devinmonitor uses to estimate cost for it. An override replaces the built-in entry for that model wholesale rather than merging field by field, so a key that is present must carry every rate that matters. Every object in this document forbids unknown properties: the Go reader tolerates unknown keys on read for forward compatibility, but this schema rejects them, so a typo in a field name is caught by an editor instead of being silently ignored.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "models"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional self-reference to this schema document, so an editor can offer autocomplete and validation for the file. It is the value of the `pricing.SchemaURL` constant, which `Save` writes here when it rewrites the file. Purely advisory to editors: the reader ignores this field, and a missing or different value changes nothing about how the overrides are applied."
+    },
+    "models": {
+      "type": "object",
+      "description": "The overrides themselves, keyed by model name. This is an open map, not a fixed-shape object: any key is accepted, so a model can be added or corrected without a schema change, and the set of keys is whatever the user has hand-written. A name that exactly matches a model recorded in the Devin CLI usage database takes effect for that model; a name that matches nothing is simply never consulted. An empty object is valid and means \"no overrides\".",
+      "additionalProperties": {
+        "$ref": "#/$defs/override"
+      }
+    }
+  },
+  "$defs": {
+    "override": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One model's user-supplied pricing. All four rates are required and are given in USD per 1,000,000 tokens, matching the unit the built-in price table uses. The override is applied as a whole: every rate here replaces the built-in value for the same model, so a partially specified entry is not a merge and must not be treated as one. Set `free` to true for a model that should be attributed no cost at all.",
+      "required": [
+        "inputPerM",
+        "outputPerM",
+        "cacheReadPerM",
+        "cacheWritePerM"
+      ],
+      "properties": {
+        "inputPerM": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Price of uncached prompt (input) tokens, in USD per 1,000,000 tokens. Multiplied by the input token count when devinmonitor estimates cost for this model."
+        },
+        "outputPerM": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Price of completion (output) tokens, in USD per 1,000,000 tokens. Usually the highest of the four rates and the one that dominates a report's cost figure."
+        },
+        "cacheReadPerM": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Price of prompt tokens served from the prompt cache, in USD per 1,000,000 tokens. Typically a fraction of `inputPerM`, since a cache hit is not new work; it is still a real billed token, so it is priced rather than ignored."
+        },
+        "cacheWritePerM": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Price of prompt tokens written into the prompt cache, in USD per 1,000,000 tokens. On some providers this is the same as `inputPerM` and on others it is a premium over it; set 0 for a provider that does not bill cache writes separately."
+        },
+        "free": {
+          "type": "boolean",
+          "description": "When true, no cost is attributed to this model at all: its requests contribute 0.0 to every cost total regardless of token volume, and cost displays render it as free rather than as a zero price. Optional and defaults to false. It is independent of the four rates — a free model is conventionally written with all rates 0, and the `pricing` package's validation reports an entry whose four rates are all 0 without `free: true`, because that shape is far more likely to be a mistake than an intentional zero price."
+        }
+      }
+    }
+  }
+}

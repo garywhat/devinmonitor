@@ -1,0 +1,24 @@
+{
+  "$schema": "./pricing.schema.json",
+  "models": {
+    "devin-v2": {
+      "inputPerM": 3.0,
+      "outputPerM": 15.0,
+      "cacheReadPerM": 0.3,
+      "cacheWritePerM": 3.75
+    },
+    "glm-5-2": {
+      "inputPerM": 0,
+      "outputPerM": 0,
+      "cacheReadPerM": 0,
+      "cacheWritePerM": 0,
+      "free": true
+    },
+    "claude-sonnet-4-5-20250929": {
+      "inputPerM": 3.0,
+      "outputPerM": 15.0,
+      "cacheReadPerM": 0.3,
+      "cacheWritePerM": 6.0
+    }
+  }
+}

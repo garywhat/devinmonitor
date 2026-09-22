@@ -14,6 +14,7 @@ import (
 	"github.com/garywhat/devinmonitor/internal/config"
 	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
+	"github.com/garywhat/devinmonitor/internal/pricing"
 	"github.com/garywhat/devinmonitor/internal/ui"
 )
 
@@ -311,12 +312,102 @@ var cmdModelAliasSub = func() *cobra.Command {
 
 var cmdPricing = func() *cobra.Command {
 	var input, output, cacheRead, cacheWrite float64
+	var freeFlag bool
+	var filePath string
+
+	// pricingPath resolves the override file: --file when given, otherwise the
+	// canonical <config dir>/pricing.json.
+	pricingPath := func() string {
+		if filePath != "" {
+			return filePath
+		}
+		return pricing.DefaultPath()
+	}
+
+	// overridesTable renders the merged overrides table: pricing.json entries
+	// first (source "file"), then legacy cfg.CustomPricing entries (source
+	// "config"). A model present in the override file shadows its legacy
+	// config entry, mirroring the precedence remove uses. ok is false when the
+	// override file exists but could not be read; an empty string with ok true
+	// means there are no overrides at all.
+	overridesTable := func(cfg *config.Config) (string, bool) {
+		type entry struct {
+			model string
+			o     pricing.Override
+			src   string
+		}
+		f, err := pricing.Load(pricingPath())
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "pricing: %v\n", err)
+			return "", false
+		}
+
+		entries := make([]entry, 0, len(f.Models))
+		for m, o := range f.Models {
+			entries = append(entries, entry{model: m, o: o, src: "file"})
+		}
+		sort.Slice(entries, func(i, j int) bool { return entries[i].model < entries[j].model })
+
+		legacy := make([]string, 0, len(cfg.CustomPricing))
+		for m := range cfg.CustomPricing {
+			legacy = append(legacy, m)
+		}
+		sort.Strings(legacy)
+		for _, m := range legacy {
+			if _, inFile := f.Get(m); inFile {
+				continue
+			}
+			p := cfg.CustomPricing[m]
+			entries = append(entries, entry{
+				model: m,
+				o: pricing.Override{
+					InputPerM:      p.InputPerM,
+					OutputPerM:     p.OutputPerM,
+					CacheReadPerM:  p.CacheReadPerM,
+					CacheWritePerM: p.CacheWritePerM,
+				},
+				src: "config",
+			})
+		}
+
+		if len(entries) == 0 {
+			return "", true
+		}
+		t := ui.NewTable("Model", "Input/M", "Output/M", "Cache R/M", "Cache W/M", "Free", "Source")
+		for _, e := range entries {
+			free := "no"
+			if e.o.Free {
+				free = "yes"
+			}
+			t.Row(e.model,
+				fmt.Sprintf("$%.2f", e.o.InputPerM),
+				fmt.Sprintf("$%.2f", e.o.OutputPerM),
+				fmt.Sprintf("$%.2f", e.o.CacheReadPerM),
+				fmt.Sprintf("$%.2f", e.o.CacheWritePerM),
+				free,
+				e.src)
+		}
+		return t.String(), true
+	}
+
 	c := &cobra.Command{
-		Use:   "pricing [list|set <model>|remove <model>]",
+		Use:   "pricing [list|overrides|set <model>|remove <model>|validate|schema]",
 		Short: i18n.T("cmd.pricing"),
+		Long: i18n.T("cmd.pricing") + "\n\n" +
+			"  list       built-in table plus every user override\n" +
+			"  overrides  " + i18n.T("help.pricingOverrides") + "\n" +
+			"  set <model> --input <usd> --output <usd> [--cache-read <usd>] [--cache-write <usd>] [--free]\n" +
+			"  remove <model>\n" +
+			"  validate   " + i18n.T("help.pricingValidate") + "\n" +
+			"  schema     " + i18n.T("help.pricingSchema"),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.Global()
-			if len(args) == 0 || args[0] == "list" {
+			sub := ""
+			if len(args) > 0 {
+				sub = args[0]
+			}
+			switch sub {
+			case "", "list":
 				// Show builtin pricing.
 				fmt.Println("Built-in pricing:")
 				t := ui.NewTable("Model", "Input/M", "Output/M", "Cache R/M", "Free")
@@ -333,49 +424,109 @@ var cmdPricing = func() *cobra.Command {
 				}
 				fmt.Println(t.String())
 
-				// Show custom overrides.
-				if len(cfg.CustomPricing) > 0 {
-					fmt.Println("\nCustom overrides:")
-					t2 := ui.NewTable("Model", "Input/M", "Output/M", "Cache R/M", "Cache W/M")
-					for m, p := range cfg.CustomPricing {
-						t2.Row(m,
-							fmt.Sprintf("$%.2f", p.InputPerM),
-							fmt.Sprintf("$%.2f", p.OutputPerM),
-							fmt.Sprintf("$%.2f", p.CacheReadPerM),
-							fmt.Sprintf("$%.2f", p.CacheWritePerM))
-					}
-					fmt.Println(t2.String())
+				// Show the merged overrides, file first then legacy config.
+				fmt.Printf("\nOverride file: %s\n", pricingPath())
+				table, ok := overridesTable(cfg)
+				if !ok {
+					os.Exit(1)
 				}
-				return
-			}
-			switch args[0] {
+				if table == "" {
+					fmt.Println("No pricing overrides.")
+				} else {
+					fmt.Println(table)
+				}
+			case "overrides":
+				fmt.Printf("Override file: %s\n", pricingPath())
+				table, ok := overridesTable(cfg)
+				if !ok {
+					os.Exit(1)
+				}
+				if table == "" {
+					fmt.Println("No pricing overrides.")
+				} else {
+					fmt.Println(table)
+				}
 			case "set":
 				if len(args) < 2 {
-					fmt.Fprintln(os.Stderr, "usage: pricing set <model> --input <usd> --output <usd> [--cache-read <usd>]")
+					fmt.Fprintln(os.Stderr, "usage: pricing set <model> --input <usd> --output <usd> [--cache-read <usd>] [--cache-write <usd>] [--free]")
 					os.Exit(1)
 				}
 				m := args[1]
-				if cfg.CustomPricing == nil {
-					cfg.CustomPricing = map[string]config.CustomPricing{}
+				path := pricingPath()
+				f, err := pricing.Load(path)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "pricing: %v\n", err)
+					os.Exit(1)
 				}
-				cfg.CustomPricing[m] = config.CustomPricing{
+				f.Set(m, pricing.Override{
 					InputPerM:      input,
 					OutputPerM:     output,
 					CacheReadPerM:  cacheRead,
 					CacheWritePerM: cacheWrite,
+					Free:           freeFlag,
+				})
+				if err := pricing.Save(path, f); err != nil {
+					fmt.Fprintf(os.Stderr, "pricing: %v\n", err)
+					os.Exit(1)
 				}
-				_ = config.SaveGlobal()
-				fmt.Printf("Custom pricing set for %s\n", m)
+				fmt.Printf("Custom pricing set for %s in %s\n", m, path)
 			case "remove":
 				if len(args) < 2 {
 					fmt.Fprintln(os.Stderr, "usage: pricing remove <model>")
 					os.Exit(1)
 				}
-				delete(cfg.CustomPricing, args[1])
-				_ = config.SaveGlobal()
-				fmt.Printf("Custom pricing removed for %s\n", args[1])
+				m := args[1]
+				path := pricingPath()
+				f, err := pricing.Load(path)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "pricing: %v\n", err)
+					os.Exit(1)
+				}
+				if f.Remove(m) {
+					if err := pricing.Save(path, f); err != nil {
+						fmt.Fprintf(os.Stderr, "pricing: %v\n", err)
+						os.Exit(1)
+					}
+					fmt.Printf("Custom pricing removed for %s (source: file, %s)\n", m, path)
+					break
+				}
+				if cfg != nil && cfg.CustomPricing != nil {
+					if _, ok := cfg.CustomPricing[m]; ok {
+						delete(cfg.CustomPricing, m)
+						_ = config.SaveGlobal()
+						fmt.Printf("Custom pricing removed for %s (source: config)\n", m)
+						break
+					}
+				}
+				fmt.Printf("No override for %s\n", m)
+			case "validate":
+				path := pricingPath()
+				if _, err := os.Stat(path); os.IsNotExist(err) {
+					fmt.Printf("No override file at %s; nothing to validate.\n", path)
+					break
+				}
+				f, err := pricing.Load(path)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "pricing: %v\n", err)
+					os.Exit(1)
+				}
+				if problems := pricing.Validate(f); len(problems) > 0 {
+					for _, p := range problems {
+						fmt.Fprintln(os.Stderr, p)
+					}
+					os.Exit(1)
+				}
+				fmt.Printf("OK: %s is valid\n", path)
+			case "schema":
+				fmt.Printf("Schema URL: %s\n", pricing.SchemaURL)
+				fmt.Printf("Override file: %s\n", pricingPath())
+				// The schema may also be checked out next to the working
+				// directory; its absence is not an error.
+				if _, err := os.Stat("docs/pricing.schema.json"); err == nil {
+					fmt.Println("Local schema: docs/pricing.schema.json")
+				}
 			default:
-				fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n", args[0])
+				fmt.Fprintf(os.Stderr, "unknown subcommand: %s (valid: list, overrides, set, remove, validate, schema)\n", args[0])
 				os.Exit(1)
 			}
 		},
@@ -384,27 +535,7 @@ var cmdPricing = func() *cobra.Command {
 	c.Flags().Float64Var(&output, "output", 0, "USD per 1M output tokens")
 	c.Flags().Float64Var(&cacheRead, "cache-read", 0, "USD per 1M cache-read tokens")
 	c.Flags().Float64Var(&cacheWrite, "cache-write", 0, "USD per 1M cache-write tokens")
+	c.Flags().BoolVar(&freeFlag, "free", false, i18n.T("help.pricingFree"))
+	c.Flags().StringVar(&filePath, "file", "", i18n.T("help.pricingFile"))
 	return c
-}
-
-// lookupPricingWithCustom returns pricing, merging custom overrides with builtin.
-func lookupPricingWithCustom(cfg *config.Config, modelName string) model.Pricing {
-	// Check model aliases first.
-	if cfg != nil && cfg.ModelAliases != nil {
-		if canonical, ok := cfg.ModelAliases[modelName]; ok {
-			modelName = canonical
-		}
-	}
-	p := model.LookupPricing(modelName)
-	// Apply custom pricing override.
-	if cfg != nil && cfg.CustomPricing != nil {
-		if cp, ok := cfg.CustomPricing[modelName]; ok {
-			p.InputPerM = cp.InputPerM
-			p.OutputPerM = cp.OutputPerM
-			p.CacheReadPerM = cp.CacheReadPerM
-			p.CacheWritePerM = cp.CacheWritePerM
-			p.Free = false
-		}
-	}
-	return p
 }

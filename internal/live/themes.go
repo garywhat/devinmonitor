@@ -2,7 +2,9 @@ package live
 
 import (
 	"fmt"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -206,10 +208,33 @@ func GetTheme(name string) Theme {
 	return Themes["dark"]
 }
 
-// isLightTerminal attempts to detect a light terminal background.
-// In practice, we can't reliably detect this without terminfo queries;
-// we default to false (dark terminal) which is the common case.
+// isLightTerminal reports whether the terminal has a light background, so the
+// "auto" theme can pick a contrasting palette.
+//
+// There is no portable way to ask without writing an OSC 11 request to the
+// terminal and reading the reply back, which is disruptive from inside a TUI.
+// Instead we honour the hints terminals actually export, and fall back to dark
+// when nothing is known: a wrong "dark" on a light terminal is far less
+// damaging than a wrong "light" on a dark one (which would render near-white
+// text on white).
 func isLightTerminal() bool {
+	// Some terminals state it outright.
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("TERM_BACKGROUND"))) {
+	case "light":
+		return true
+	case "dark":
+		return false
+	}
+	// COLORFGBG is "<fg>;<bg>" with ANSI colour indices, e.g. "15;0" on a dark
+	// background and "0;15" on a light one. Only the last field is the
+	// background. Indices 0-6 and 8 (bright black) are dark; 7 and 9-15 light.
+	if v := strings.TrimSpace(os.Getenv("COLORFGBG")); v != "" {
+		if i := strings.LastIndexByte(v, ';'); i >= 0 && i+1 < len(v) {
+			if n, err := strconv.Atoi(strings.TrimSpace(v[i+1:])); err == nil {
+				return n >= 7 && n != 8
+			}
+		}
+	}
 	return false
 }
 

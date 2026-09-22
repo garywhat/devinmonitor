@@ -218,7 +218,7 @@ func (m model_) View() string {
 	}
 }
 
-// ---- Full layout (>=120 cols, >=24 rows) ----
+// ---- Full layout (>=120 cols, >=28 rows) ----
 
 func (m model_) viewFull() string {
 	s := m.currentSession()

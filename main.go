@@ -17,6 +17,7 @@ import (
 	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/live"
 	"github.com/garywhat/devinmonitor/internal/model"
+	"github.com/garywhat/devinmonitor/internal/pricing"
 	"github.com/garywhat/devinmonitor/internal/reader"
 	"github.com/garywhat/devinmonitor/internal/report"
 	"github.com/garywhat/devinmonitor/internal/ui"
@@ -25,9 +26,11 @@ import (
 	_ "github.com/garywhat/devinmonitor/internal/analytics"
 	_ "github.com/garywhat/devinmonitor/internal/blocks"
 	_ "github.com/garywhat/devinmonitor/internal/budget"
+	_ "github.com/garywhat/devinmonitor/internal/errscan"
 	_ "github.com/garywhat/devinmonitor/internal/filterexport"
 	_ "github.com/garywhat/devinmonitor/internal/integration"
 	_ "github.com/garywhat/devinmonitor/internal/project"
+	_ "github.com/garywhat/devinmonitor/internal/share"
 	_ "github.com/garywhat/devinmonitor/internal/trends"
 	_ "github.com/garywhat/devinmonitor/internal/tuiext"
 )
@@ -75,6 +78,54 @@ func (m *minIntValue) Set(s string) error {
 
 func (m *minIntValue) Type() string { return "int" }
 
+// installPricingSources loads the user's price overrides and model aliases and
+// installs them process-wide.
+//
+// Two sources feed overrides: the dedicated pricing.json file and the legacy
+// config.customPricing map. The file wins on a conflict so the newer, schema-
+// carrying source is authoritative; nothing writes the legacy map any more.
+func installPricingSources() {
+	cfg := config.Global()
+	if cfg != nil && len(cfg.ModelAliases) > 0 {
+		model.SetModelAliases(cfg.ModelAliases)
+	}
+
+	overrides := make(map[string]model.Pricing)
+	if cfg != nil {
+		for name, cp := range cfg.CustomPricing {
+			overrides[name] = model.Pricing{
+				Model:          name,
+				InputPerM:      cp.InputPerM,
+				OutputPerM:     cp.OutputPerM,
+				CacheReadPerM:  cp.CacheReadPerM,
+				CacheWritePerM: cp.CacheWritePerM,
+			}
+		}
+	}
+
+	path := pricing.DefaultPath()
+	f, err := pricing.Load(path)
+	switch {
+	case err != nil:
+		// A malformed override file must be visible. Silently ignoring it would
+		// leave the user staring at unchanged numbers after setting a price.
+		fmt.Fprintf(os.Stderr, "warning: ignoring %s: %v\n", path, err)
+	case f != nil:
+		for name, o := range f.Models {
+			overrides[name] = model.Pricing{
+				Model:          name,
+				InputPerM:      o.InputPerM,
+				OutputPerM:     o.OutputPerM,
+				CacheReadPerM:  o.CacheReadPerM,
+				CacheWritePerM: o.CacheWritePerM,
+				Free:           o.Free,
+			}
+		}
+	}
+
+	model.SetPricingOverrides(overrides)
+}
+
 func main() {
 	if err := i18n.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "i18n init: %v\n", err)
@@ -102,6 +153,11 @@ func main() {
 	}
 	root.PersistentFlags().StringVar(&flagDataDir, "data-dir", "", i18n.T("help.dataDir"))
 	root.PersistentFlags().StringVar(&flagLocale, "locale", "", i18n.T("help.locale"))
+
+	// Prices and aliases are process-global: install them once here so the
+	// reports, the live dashboard, MCP and the web API all resolve the same
+	// way instead of each picking its own source.
+	installPricingSources()
 
 	// Disable alphabetical sorting so commands appear in the explicit
 	// logical grouping defined below.
@@ -186,7 +242,7 @@ func buildOrderedCommands() []cmdEntry {
 		// --- Analytics ---
 		feat("cache"), feat("efficiency"), feat("tasks"), feat("optimize"),
 		feat("compaction"), feat("context"), feat("analytics"),
-		feat("model-compare"), feat("yield"),
+		feat("model-compare"), feat("yield"), feat("errors"),
 
 		// --- Trends & Charts ---
 		feat("trends"), feat("heatmap"), feat("calendar"), feat("compare"),
@@ -201,7 +257,7 @@ func buildOrderedCommands() []cmdEntry {
 		core(cmdAgents()),
 
 		// --- Export & Backup ---
-		feat("export"), feat("report"), feat("backup"), feat("status"),
+		feat("export"), feat("report"), feat("backup"), feat("status"), feat("share"),
 
 		// --- Integration ---
 		feat("mcp"), feat("web"), feat("notify"),

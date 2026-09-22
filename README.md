@@ -291,7 +291,7 @@ The live dashboard adapts to terminal size with four breakpoints:
 
 | Breakpoint | Size | Layout |
 |------------|------|--------|
-| **Full** | >= 120 cols, >= 24 rows | complete 4-row dashboard |
+| **Full** | >= 120 cols, >= 28 rows | complete 4-row dashboard |
 | **Compact** | 80-119 cols | 2-column + tabbed views |
 | **Mini** | < 80 cols | single-column flow for narrow windows / termux |
 | **Tiny** | < 6 rows | single-line ticker for tmux splits |
