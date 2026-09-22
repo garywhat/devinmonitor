@@ -61,10 +61,10 @@ var cmdGit = func() *cobra.Command {
 
 // gitCommit is a parsed git log entry.
 type gitCommit struct {
-	Hash      string
-	Author    string
-	Date      time.Time
-	Subject   string
+	Hash    string
+	Author  string
+	Date    time.Time
+	Subject string
 }
 
 // readGitLog reads the git log for a repository at dir, since the given time.

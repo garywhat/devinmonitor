@@ -37,7 +37,7 @@ func RunReplay(dataDir, sessionID string) error {
 type replayModel struct {
 	session   *model.Session
 	messages  []model.Message
-	pos       int       // current message index
+	pos       int // current message index
 	paused    bool
 	width     int
 	height    int
@@ -198,7 +198,7 @@ func renderReplayMessage(msg model.Message, w int) string {
 
 	// Model info for assistant messages.
 	if msg.Role == "assistant" && msg.GenerationModel != "" {
-		b.WriteString(dimStyle.Render("["+msg.GenerationModel+"]  "))
+		b.WriteString(dimStyle.Render("[" + msg.GenerationModel + "]  "))
 	}
 
 	b.WriteString("\n")

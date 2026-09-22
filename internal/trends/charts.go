@@ -273,7 +273,7 @@ func Render24HourChart(ss []model.Session, height int) string {
 	now := time.Now()
 	for i := 0; i < 24; i++ {
 		values[i] = float64(buckets[i])
-		h := now.Add(time.Duration(-(23-i)) * time.Hour)
+		h := now.Add(time.Duration(-(23 - i)) * time.Hour)
 		labels[i] = fmt.Sprintf("%02d", h.Hour())
 	}
 	max := 0.0

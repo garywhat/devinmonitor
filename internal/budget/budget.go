@@ -62,11 +62,11 @@ func startOfWeek(t time.Time, startDay time.Weekday) time.Time {
 
 // GuardrailStatus is the status of a single budget period.
 type GuardrailStatus struct {
-	Label   string  // "Daily", "Weekly", "Monthly"
-	Limit   float64 // configured limit (USD); 0 = no limit
-	Spend   float64 // current spend (USD)
-	Pct     float64 // spend/limit * 100 (0 when no limit)
-	State   string  // "ok", "warn", "over", "unlimited"
+	Label string  // "Daily", "Weekly", "Monthly"
+	Limit float64 // configured limit (USD); 0 = no limit
+	Spend float64 // current spend (USD)
+	Pct   float64 // spend/limit * 100 (0 when no limit)
+	State string  // "ok", "warn", "over", "unlimited"
 }
 
 // State color thresholds per TASK.md:
@@ -244,11 +244,11 @@ func PlanUsage(ss []model.Session, cfg *config.Config, now time.Time) PlanStatus
 
 // SubscriptionSavings compares API-equivalent spend vs the configured plan.
 type SubscriptionSavings struct {
-	Plan         string
-	PlanMonthly  float64
+	Plan          string
+	PlanMonthly   float64
 	APIEquivalent float64 // estimated API cost for the month
-	Savings      float64 // APIEquivalent - PlanMonthly
-	SavingsPct   float64 // Savings / APIEquivalent * 100
+	Savings       float64 // APIEquivalent - PlanMonthly
+	SavingsPct    float64 // Savings / APIEquivalent * 100
 }
 
 // ComputeSavings compares this month's API-equivalent spend to the plan cost.

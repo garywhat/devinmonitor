@@ -16,10 +16,10 @@ type Budget struct {
 
 // BurnRate computes real-time spending velocity.
 type BurnRate struct {
-	PerHour   float64 // USD/hr based on recent activity
-	PerDay    float64 // USD/day extrapolated
-	PerWeek   float64
-	PerMonth  float64
+	PerHour  float64 // USD/hr based on recent activity
+	PerDay   float64 // USD/day extrapolated
+	PerWeek  float64
+	PerMonth float64
 }
 
 // CostProjection predicts future spending based on historical patterns.
@@ -43,8 +43,8 @@ type CostBreakdown struct {
 
 // TrendPoint is a single point in a time series chart.
 type TrendPoint struct {
-	Label string
-	Cost  float64
+	Label  string
+	Cost   float64
 	Tokens int64
 }
 
@@ -58,10 +58,10 @@ type HeatmapCell struct {
 
 // ContributionDay is one day in a GitHub-style contribution calendar.
 type ContributionDay struct {
-	Date    time.Time
-	Count   int
-	Cost    float64
-	Level   int // 0-4 intensity level
+	Date  time.Time
+	Count int
+	Cost  float64
+	Level int // 0-4 intensity level
 }
 
 // PeriodComparison compares two time periods side by side.
@@ -85,7 +85,7 @@ type CacheStats struct {
 
 // EfficiencyScore is a composite token efficiency metric.
 type EfficiencyScore struct {
-	TokensPerDollar float64
+	TokensPerDollar  float64
 	TokensPerRequest float64
 	OutputVerbosity  float64 // output_tokens / request
 	CacheSavingsPct  float64
@@ -95,13 +95,13 @@ type EfficiencyScore struct {
 type OneShotRate struct {
 	TotalEdits  int
 	Retries     int
-	OneShotPct  float64 // % of edits that succeeded first try
+	OneShotPct  float64        // % of edits that succeeded first try
 	FileRetries map[string]int // file_path → retry count
 }
 
 // TaskCategory classifies a session's work type.
 type TaskCategory struct {
-	Name string // Coding, Debugging, Testing, etc.
+	Name  string // Coding, Debugging, Testing, etc.
 	Count int
 	Cost  float64
 }
@@ -116,8 +116,8 @@ type WasteFinding struct {
 
 // CompactionEvent marks a context window compaction.
 type CompactionEvent struct {
-	SessionID string
-	Timestamp time.Time
+	SessionID    string
+	Timestamp    time.Time
 	BeforeTokens int
 	AfterTokens  int
 }
@@ -141,10 +141,10 @@ type ModelCompareRow struct {
 
 // ContextAnalysis breaks down what fills a session's context window.
 type ContextAnalysis struct {
-	SessionID    string
-	TotalTokens  int64
-	ByTool       map[string]int64 // tool name → estimated token contribution
-	ByCategory   map[string]int64 // message type → token contribution
+	SessionID   string
+	TotalTokens int64
+	ByTool      map[string]int64 // tool name → estimated token contribution
+	ByCategory  map[string]int64 // message type → token contribution
 }
 
 // ---- Filter & Search ----
@@ -174,11 +174,11 @@ type SearchResult struct {
 
 // ProjectDetail holds drill-down data for a single project.
 type ProjectDetail struct {
-	Name        string
-	Path        string
-	Sessions    int
-	Cost        float64
-	Tokens      int64
+	Name           string
+	Path           string
+	Sessions       int
+	Cost           float64
+	Tokens         int64
 	DailyBreakdown []TrendPoint
 	ModelBreakdown map[string]*ModelStats
 	ToolBreakdown  map[string]int
@@ -196,28 +196,28 @@ type ToolAttribution struct {
 
 // Notification is a desktop or webhook notification payload.
 type Notification struct {
-	Title   string
-	Body    string
-	Level   string // info, warning, critical
+	Title string
+	Body  string
+	Level string // info, warning, critical
 }
 
 // ---- CLI Mode ----
 
 // SessionListItem is a compact session row for `ls --json`.
 type SessionListItem struct {
-	ID         string `json:"id"`
-	Title      string `json:"title"`
-	Model      string `json:"model"`
-	Project    string `json:"project"`
-	Cost       float64 `json:"cost"`
-	Tokens     int64  `json:"tokens"`
-	Duration   string `json:"duration"`
-	Status     string `json:"status"`
+	ID       string  `json:"id"`
+	Title    string  `json:"title"`
+	Model    string  `json:"model"`
+	Project  string  `json:"project"`
+	Cost     float64 `json:"cost"`
+	Tokens   int64   `json:"tokens"`
+	Duration string  `json:"duration"`
+	Status   string  `json:"status"`
 }
 
 // AlertItem is a single alert for `alerts --json`.
 type AlertItem struct {
-	Kind     string `json:"kind"` // low_context, idle, ghost, budget
+	Kind     string `json:"kind"`     // low_context, idle, ghost, budget
 	Severity string `json:"severity"` // info, warning, critical
 	Message  string `json:"message"`
 }
@@ -244,8 +244,8 @@ type RenderedCommit struct {
 
 // ToolCallStateEntry is a tool call state record.
 type ToolCallStateEntry struct {
-	SessionID           string
-	ToolCallID          string
-	ToolCallJSON        string
-	ToolCallUpdateJSON  string
+	SessionID          string
+	ToolCallID         string
+	ToolCallJSON       string
+	ToolCallUpdateJSON string
 }

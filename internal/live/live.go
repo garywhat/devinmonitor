@@ -43,18 +43,18 @@ var (
 )
 
 type model_ struct {
-	reader    reader.Reader
-	interval  time.Duration
-	width     int
-	height    int
-	sessions  []model.Session
-	current   int // index into sessions
-	tab       int // 0=stream 1=context 2=latency 3=tools (compact mode)
-	theme     int // 0=dark 1=light
-	lastPoll  time.Time
-	err       error
-	quitting  bool
-	loading   bool // true until first poll completes
+	reader   reader.Reader
+	interval time.Duration
+	width    int
+	height   int
+	sessions []model.Session
+	current  int // index into sessions
+	tab      int // 0=stream 1=context 2=latency 3=tools (compact mode)
+	theme    int // 0=dark 1=light
+	lastPoll time.Time
+	err      error
+	quitting bool
+	loading  bool // true until first poll completes
 }
 
 type tickMsg time.Time
@@ -249,7 +249,7 @@ func (m model_) viewFull() string {
 	// Each panel needs panelOverhead(3) lines, so content = panelH - 3.
 	// stream: 35%, row3: 30%, tools: 35%
 	// row3 needs at least 4 content lines (context growth: sparkline + 3 stat lines).
-	minPanelH := panelOverhead + 3 // 3 content lines minimum
+	minPanelH := panelOverhead + 3     // 3 content lines minimum
 	row3MinPanelH := panelOverhead + 4 // 4 content lines for context growth
 	streamPanelH := availH * 7 / 20
 	if streamPanelH < minPanelH {
@@ -338,7 +338,7 @@ func (m model_) viewCompact() string {
 	// Calculate available height for tab content panel.
 	// header(1) + row1(~7 lines with border) + tabs(1) + controls(1) = ~10
 	// content panel needs border(2) + title(1) = 3 lines overhead.
-	usedH := 1 + 7 + 1 + 1 // approximate
+	usedH := 1 + 7 + 1 + 1       // approximate
 	contentMaxH := h - usedH - 3 // 3 = panel border + title
 	if contentMaxH < 3 {
 		contentMaxH = 3
@@ -725,12 +725,12 @@ func (m model_) renderStatus(s *model.Session, w int) string {
 }
 
 type reqInfo struct {
-	idx        int
-	ttftSec    float64
-	totalSec   float64
-	tokPerSec  float64
-	finish     string
-	createdAt  time.Time
+	idx       int
+	ttftSec   float64
+	totalSec  float64
+	tokPerSec float64
+	finish    string
+	createdAt time.Time
 }
 
 func (m model_) recentRequests(s *model.Session, n int) []reqInfo {

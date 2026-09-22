@@ -19,51 +19,51 @@ const SchemaVersion = 1
 
 // Document is the top-level export container.
 type Document struct {
-	ExportSchema int       `json:"export_schema"`
-	GeneratedAt  time.Time `json:"generated_at"`
+	ExportSchema int          `json:"export_schema"`
+	GeneratedAt  time.Time    `json:"generated_at"`
 	Sessions     []ExpSession `json:"sessions"`
 }
 
 // ExpSession is a normalized session for export.
 type ExpSession struct {
-	ID             string    `json:"id"`
-	Title          string    `json:"title"`
-	Project        string    `json:"project"`
-	WorkingDir     string    `json:"working_dir"`
-	Model          string    `json:"model"`
-	AgentMode      string    `json:"agent_mode"`
-	BackendType    string    `json:"backend_type"`
-	CreatedAt      time.Time `json:"created_at"`
-	LastActivityAt time.Time `json:"last_activity_at"`
-	DurationSec    float64   `json:"duration_sec"`
-	Requests       int       `json:"requests"`
-	InputTokens    int64     `json:"input_tokens"`
-	OutputTokens   int64     `json:"output_tokens"`
-	CacheReadTokens int64    `json:"cache_read_tokens"`
-	CacheWriteTokens int64   `json:"cache_write_tokens"`
-	CreditCost     float64   `json:"credit_cost"`
-	ACUCost        float64   `json:"acu_cost"`
-	EstimatedCost  float64   `json:"estimated_cost"`
-	IsFree         bool      `json:"is_free"`
-	ToolCalls      map[string]int `json:"tool_calls"`
-	Requests2      []ExpRequest `json:"requests_detail,omitempty"`
+	ID               string         `json:"id"`
+	Title            string         `json:"title"`
+	Project          string         `json:"project"`
+	WorkingDir       string         `json:"working_dir"`
+	Model            string         `json:"model"`
+	AgentMode        string         `json:"agent_mode"`
+	BackendType      string         `json:"backend_type"`
+	CreatedAt        time.Time      `json:"created_at"`
+	LastActivityAt   time.Time      `json:"last_activity_at"`
+	DurationSec      float64        `json:"duration_sec"`
+	Requests         int            `json:"requests"`
+	InputTokens      int64          `json:"input_tokens"`
+	OutputTokens     int64          `json:"output_tokens"`
+	CacheReadTokens  int64          `json:"cache_read_tokens"`
+	CacheWriteTokens int64          `json:"cache_write_tokens"`
+	CreditCost       float64        `json:"credit_cost"`
+	ACUCost          float64        `json:"acu_cost"`
+	EstimatedCost    float64        `json:"estimated_cost"`
+	IsFree           bool           `json:"is_free"`
+	ToolCalls        map[string]int `json:"tool_calls"`
+	Requests2        []ExpRequest   `json:"requests_detail,omitempty"`
 }
 
 // ExpRequest is a per-request record (assistant turn).
 type ExpRequest struct {
-	RequestID       string  `json:"request_id"`
-	Model           string  `json:"model"`
-	FinishReason    string  `json:"finish_reason"`
-	CreatedAt       time.Time `json:"created_at"`
-	TTFTMs          float64 `json:"ttft_ms"`
-	TotalTimeMs     float64 `json:"total_time_ms"`
-	InputTokens     int64   `json:"input_tokens"`
-	OutputTokens    int64   `json:"output_tokens"`
-	CacheReadTokens int64   `json:"cache_read_tokens"`
-	CacheWriteTokens int64  `json:"cache_write_tokens"`
-	TokensPerSec    float64 `json:"tokens_per_sec"`
-	ContextSize     int     `json:"context_size"`
-	ToolCalls       []string `json:"tool_calls"`
+	RequestID        string    `json:"request_id"`
+	Model            string    `json:"model"`
+	FinishReason     string    `json:"finish_reason"`
+	CreatedAt        time.Time `json:"created_at"`
+	TTFTMs           float64   `json:"ttft_ms"`
+	TotalTimeMs      float64   `json:"total_time_ms"`
+	InputTokens      int64     `json:"input_tokens"`
+	OutputTokens     int64     `json:"output_tokens"`
+	CacheReadTokens  int64     `json:"cache_read_tokens"`
+	CacheWriteTokens int64     `json:"cache_write_tokens"`
+	TokensPerSec     float64   `json:"tokens_per_sec"`
+	ContextSize      int       `json:"context_size"`
+	ToolCalls        []string  `json:"tool_calls"`
 }
 
 // BuildDocument creates a normalized export from sessions.

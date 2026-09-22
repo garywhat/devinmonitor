@@ -85,13 +85,13 @@ type rawToolCall struct {
 }
 
 type msgMetadata struct {
-	NumTokens         *int     `json:"num_tokens"`
-	RequestID         string   `json:"request_id"`
-	Metrics           *metrics `json:"metrics"`
-	FinishReason      string   `json:"finish_reason"`
-	GenerationModel   string   `json:"generation_model"`
-	CreatedAt         string   `json:"created_at"`
-	NumTokensPreceding *int    `json:"num_tokens_preceding"`
+	NumTokens          *int     `json:"num_tokens"`
+	RequestID          string   `json:"request_id"`
+	Metrics            *metrics `json:"metrics"`
+	FinishReason       string   `json:"finish_reason"`
+	GenerationModel    string   `json:"generation_model"`
+	CreatedAt          string   `json:"created_at"`
+	NumTokensPreceding *int     `json:"num_tokens_preceding"`
 }
 
 type metrics struct {
@@ -450,4 +450,5 @@ func SortedToolNames(tc map[string]int) []string {
 
 // itoa helper to avoid strconv import noise in callers.
 func itoa(i int) string { return strconv.Itoa(i) }
+
 var _ = itoa

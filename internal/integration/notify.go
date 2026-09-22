@@ -70,7 +70,7 @@ func sendWebhook(url string, n model.Notification) error {
 		text := fmt.Sprintf("*%s*\n%s", n.Title, n.Body)
 		// Extract chat_id from URL path: /bot<token>/sendMessage?chat_id=...
 		payload = map[string]interface{}{
-			"text":      text,
+			"text":       text,
 			"parse_mode": "Markdown",
 		}
 		// If URL already has chat_id, use as-is; otherwise we need to add it.
@@ -228,9 +228,9 @@ var cmdNotify = func() *cobra.Command {
 			sent, failed := 0, 0
 			for _, a := range alerts {
 				n := model.Notification{
-					Title:   fmt.Sprintf("DevinMonitor Alert: %s", a.Kind),
-					Body:    a.Message,
-					Level:   a.Severity,
+					Title: fmt.Sprintf("DevinMonitor Alert: %s", a.Kind),
+					Body:  a.Message,
+					Level: a.Severity,
 				}
 				if cfg.NotifyDesktop {
 					if err := sendDesktopNotification(n); err != nil {

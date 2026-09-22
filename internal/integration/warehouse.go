@@ -35,15 +35,15 @@ func devinmonitorDir() string {
 	return filepath.Join(home, ".devinmonitor")
 }
 
-func warehouseDir() string  { return filepath.Join(devinmonitorDir(), "warehouse") }
-func cacheDir() string       { return filepath.Join(devinmonitorDir(), "cache") }
+func warehouseDir() string { return filepath.Join(devinmonitorDir(), "warehouse") }
+func cacheDir() string     { return filepath.Join(devinmonitorDir(), "cache") }
 
 // ---- Persistent Cache (#73) ----
 
 // cacheEntry is a cached aggregation result.
 type cacheEntry struct {
-	Key       string    `json:"key"`
-	CreatedAt time.Time `json:"createdAt"`
+	Key       string          `json:"key"`
+	CreatedAt time.Time       `json:"createdAt"`
 	Data      json.RawMessage `json:"data"`
 }
 
@@ -166,8 +166,8 @@ func warehouseListCmd() {
 		return
 	}
 	type snap struct {
-		ID        string    `json:"id"`
-		Timestamp time.Time `json:"timestamp"`
+		ID        string      `json:"id"`
+		Timestamp time.Time   `json:"timestamp"`
 		Summary   costSummary `json:"summary"`
 	}
 	var snaps []snap
@@ -226,11 +226,11 @@ func warehouseShowCmd(id string) {
 // fileWatcher polls for changes to the sessions.db file by checking its
 // modification time. On Windows, this is more reliable than fsnotify.
 type fileWatcher struct {
-	path    string
-	lastMod time.Time
+	path     string
+	lastMod  time.Time
 	onChange func()
 	interval time.Duration
-	stop    chan struct{}
+	stop     chan struct{}
 }
 
 // newFileWatcher creates a polling-based file watcher.

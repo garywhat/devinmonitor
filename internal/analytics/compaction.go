@@ -25,10 +25,10 @@ func DetectCompaction(s *model.Session) []model.CompactionEvent {
 			// Significant drop (>30%) indicates compaction.
 			if drop > 0 && dropPct > 0.30 {
 				events = append(events, model.CompactionEvent{
-					SessionID:     s.ID,
-					Timestamp:     m.CreatedAt,
-					BeforeTokens:  prevTokens,
-					AfterTokens:   cur,
+					SessionID:    s.ID,
+					Timestamp:    m.CreatedAt,
+					BeforeTokens: prevTokens,
+					AfterTokens:  cur,
 				})
 			}
 		}
@@ -49,10 +49,10 @@ func DetectCompactionAll(ss []model.Session) []model.CompactionEvent {
 
 // CompactionSummary holds aggregate compaction stats.
 type CompactionSummary struct {
-	TotalEvents   int
+	TotalEvents      int
 	TotalTokensSaved int
-	AvgDropPct    float64
-	Events        []model.CompactionEvent
+	AvgDropPct       float64
+	Events           []model.CompactionEvent
 }
 
 // CompactionStats computes aggregate compaction statistics across sessions.

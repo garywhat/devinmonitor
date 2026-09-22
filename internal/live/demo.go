@@ -11,12 +11,12 @@ import (
 
 // RunOptions controls the live-ext run mode.
 type RunOptions struct {
-	Demo    bool // use synthetic demo data
-	Once    bool // render one frame and exit (non-interactive)
-	Light   bool // minimal rendering for slow terminals
-	Theme   string // override theme
-	Width   int    // override width (for --once)
-	Height  int    // override height (for --once)
+	Demo   bool   // use synthetic demo data
+	Once   bool   // render one frame and exit (non-interactive)
+	Light  bool   // minimal rendering for slow terminals
+	Theme  string // override theme
+	Width  int    // override width (for --once)
+	Height int    // override height (for --once)
 }
 
 // RunLiveExt starts the extended live TUI with the given options.
@@ -164,22 +164,22 @@ func GenerateDemoSessions() []model.Session {
 		msgs := generateDemoMessages(startTime, endTime, i+3)
 
 		s := model.Session{
-			ID:              fmt.Sprintf("demo-%04d", i+1),
-			WorkingDir:      projects[i%len(projects)],
-			BackendType:     "anthropic",
-			Model:           modelName,
-			LatestModel:     modelName,
-			AgentMode:       modes[i%len(modes)],
-			CreatedAt:       startTime,
-			LastActivityAt:  endTime,
-			Title:           titles[i],
-			Messages:        msgs,
-			InputTokens:     0,
-			OutputTokens:    0,
-			CacheRead:       0,
-			CacheWrite:      0,
-			ToolCalls:       map[string]int{},
-			AssistantCount:  0,
+			ID:             fmt.Sprintf("demo-%04d", i+1),
+			WorkingDir:     projects[i%len(projects)],
+			BackendType:    "anthropic",
+			Model:          modelName,
+			LatestModel:    modelName,
+			AgentMode:      modes[i%len(modes)],
+			CreatedAt:      startTime,
+			LastActivityAt: endTime,
+			Title:          titles[i],
+			Messages:       msgs,
+			InputTokens:    0,
+			OutputTokens:   0,
+			CacheRead:      0,
+			CacheWrite:     0,
+			ToolCalls:      map[string]int{},
+			AssistantCount: 0,
 		}
 
 		// Aggregate from messages.
@@ -215,14 +215,14 @@ func GenerateDemoSessions() []model.Session {
 		// Add a sub-agent call to some sessions.
 		if i%3 == 0 {
 			s.SubAgentCalls = []model.SubAgentCall{{
-				Title:   "Explore codebase structure",
-				Profile: "subagent_explore",
-				IsBackground: true,
-				Task:    "Find all API endpoint definitions",
-				StartTime: startTime.Add(5 * time.Minute),
-				EndTime:   startTime.Add(8 * time.Minute),
+				Title:         "Explore codebase structure",
+				Profile:       "subagent_explore",
+				IsBackground:  true,
+				Task:          "Find all API endpoint definitions",
+				StartTime:     startTime.Add(5 * time.Minute),
+				EndTime:       startTime.Add(8 * time.Minute),
 				HasCompletion: true,
-				OutputLen: 1200,
+				OutputLen:     1200,
 			}}
 		}
 
@@ -272,10 +272,10 @@ func generateDemoMessages(start, end time.Time, count int) []model.Message {
 		})
 		// Tool result.
 		msgs = append(msgs, model.Message{
-			NodeID:    i*2 + 3,
-			Role:      "tool",
-			Content:   "File updated successfully.",
-			CreatedAt: start.Add(time.Duration(i*2+1)*step + 500*time.Millisecond),
+			NodeID:     i*2 + 3,
+			Role:       "tool",
+			Content:    "File updated successfully.",
+			CreatedAt:  start.Add(time.Duration(i*2+1)*step + 500*time.Millisecond),
 			ToolCallID: fmt.Sprintf("tc-%d-2", i),
 		})
 	}

@@ -114,9 +114,9 @@ func (st *webState) snapshotJSON() string {
 	sum := computeCostSummary(ss)
 	rows := report.BuildSessionRows(ss)
 	type snapshot struct {
-		Summary  costSummary              `json:"summary"`
-		Sessions []report.SessionRow     `json:"sessions"`
-		Alerts   []model.AlertItem       `json:"alerts"`
+		Summary  costSummary         `json:"summary"`
+		Sessions []report.SessionRow `json:"sessions"`
+		Alerts   []model.AlertItem   `json:"alerts"`
 	}
 	snap := snapshot{Summary: sum, Sessions: rows, Alerts: detectAlerts(ss)}
 	data, _ := json.Marshal(snap)

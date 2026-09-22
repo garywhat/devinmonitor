@@ -177,10 +177,10 @@ func printToolAttribution(ss []model.Session) {
 	}
 
 	type row struct {
-		tool     string
-		calls    int
+		tool      string
+		calls     int
 		costShare float64
-		tokens   int64
+		tokens    int64
 	}
 	var rows []row
 	for tool, calls := range toolCalls {

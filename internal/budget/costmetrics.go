@@ -10,28 +10,28 @@ import (
 
 // CostSummary aggregates all per-unit cost metrics across a set of sessions.
 type CostSummary struct {
-	TotalCost      float64
-	TotalSessions  int
-	TotalRequests  int
-	TotalTokens    int64
-	PerRequest     float64
-	PerSession     float64
-	PerToken       float64
-	PerDay         float64
-	ActiveDays     int
-	MostExpensive  []SessionCostRow
-	AvgPerSession  float64
+	TotalCost     float64
+	TotalSessions int
+	TotalRequests int
+	TotalTokens   int64
+	PerRequest    float64
+	PerSession    float64
+	PerToken      float64
+	PerDay        float64
+	ActiveDays    int
+	MostExpensive []SessionCostRow
+	AvgPerSession float64
 }
 
 // SessionCostRow is a single session ranked by cost.
 type SessionCostRow struct {
-	ID         string
-	Title      string
-	Model      string
-	Cost       float64
-	Estimated  bool
-	Requests   int
-	CreatedAt  time.Time
+	ID        string
+	Title     string
+	Model     string
+	Cost      float64
+	Estimated bool
+	Requests  int
+	CreatedAt time.Time
 }
 
 // ComputeCostSummary computes the full set of cost metrics from sessions.

@@ -43,15 +43,15 @@ type ExtModel struct {
 	interval time.Duration
 
 	// Overlay state.
-	showHelp            bool
-	showSettings        bool
-	showCommandPalette  bool
-	showSessionDetail   bool
-	showModelBreakdown  bool
-	splitPane           bool
-	paneView            bool // false=list(table), true=card grid
-	timeWindow          int
-	logTailing          bool
+	showHelp           bool
+	showSettings       bool
+	showCommandPalette bool
+	showSessionDetail  bool
+	showModelBreakdown bool
+	splitPane          bool
+	paneView           bool // false=list(table), true=card grid
+	timeWindow         int
+	logTailing         bool
 
 	// Command palette state.
 	cpQuery    string
@@ -495,7 +495,7 @@ func (m ExtModel) renderPaneView() string {
 			card := lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(borderColor).
-				Width(cardW - 2).
+				Width(cardW-2).
 				Padding(0, 1).
 				Render(fmt.Sprintf("%s\n%s · %s\nreqs %d · %s · %s",
 					titleStyle.Render(truncateStr(title, cardW-4)),

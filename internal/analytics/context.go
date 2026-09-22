@@ -58,7 +58,7 @@ type ContextBreakdown struct {
 
 // ContextEntry is a single entry in the context breakdown.
 type ContextEntry struct {
-	Label string
+	Label  string
 	Tokens int64
 	Pct    float64
 }

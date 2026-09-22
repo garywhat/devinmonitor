@@ -10,8 +10,8 @@ import (
 
 // editTools is the set of tool names that modify files.
 var editTools = map[string]bool{
-	"edit": true,
-	"write": true,
+	"edit":          true,
+	"write":         true,
 	"notebook_edit": true,
 }
 

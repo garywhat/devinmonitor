@@ -15,19 +15,19 @@ type Config struct {
 	mu sync.RWMutex
 
 	// Display
-	Theme         string `json:"theme"`          // auto, dark, light, dracula, nord, etc.
-	ColorScheme   string `json:"colorScheme"`    // auto, light, dark
-	Locale        string `json:"locale"`         // en, zh, etc.
-	TimeFormat    string `json:"timeFormat"`     // auto, 12h, 24h
-	Timezone      string `json:"timezone"`       // auto or IANA tz
-	DateFormat    string `json:"dateFormat"`     // optional date format
-	AbbrevTokens  bool   `json:"abbreviateTokens"`
-	NoEmoji       bool   `json:"noEmoji"`
-	NoHeader      bool   `json:"noHeader"`
+	Theme        string `json:"theme"`       // auto, dark, light, dracula, nord, etc.
+	ColorScheme  string `json:"colorScheme"` // auto, light, dark
+	Locale       string `json:"locale"`      // en, zh, etc.
+	TimeFormat   string `json:"timeFormat"`  // auto, 12h, 24h
+	Timezone     string `json:"timezone"`    // auto or IANA tz
+	DateFormat   string `json:"dateFormat"`  // optional date format
+	AbbrevTokens bool   `json:"abbreviateTokens"`
+	NoEmoji      bool   `json:"noEmoji"`
+	NoHeader     bool   `json:"noHeader"`
 
 	// Refresh
-	RefreshInterval int `json:"refreshInterval"` // milliseconds (see live.MinIntervalMs)
-	RefreshHz       float64 `json:"refreshHz"`   // display refresh rate
+	RefreshInterval int     `json:"refreshInterval"` // milliseconds (see live.MinIntervalMs)
+	RefreshHz       float64 `json:"refreshHz"`       // display refresh rate
 
 	// Budget
 	BudgetDaily   float64 `json:"budgetDaily"`
@@ -35,13 +35,13 @@ type Config struct {
 	BudgetMonthly float64 `json:"budgetMonthly"`
 
 	// Currency
-	Currency string `json:"currency"` // USD, EUR, CNY, etc.
-	ACURate  float64 `json:"acuRate"` // ACU to USD conversion rate
+	Currency string  `json:"currency"` // USD, EUR, CNY, etc.
+	ACURate  float64 `json:"acuRate"`  // ACU to USD conversion rate
 
 	// Plan (Devin subscription)
-	Plan          string  `json:"plan"`          // none, custom
-	PlanMonthly   float64 `json:"planMonthly"`   // monthly plan cost in USD
-	PlanACULimit  float64 `json:"planACULimit"`  // monthly ACU limit
+	Plan         string  `json:"plan"`         // none, custom
+	PlanMonthly  float64 `json:"planMonthly"`  // monthly plan cost in USD
+	PlanACULimit float64 `json:"planACULimit"` // monthly ACU limit
 
 	// Reset
 	ResetHour int `json:"resetHour"` // 0-23, daily reset hour
@@ -62,9 +62,9 @@ type Config struct {
 
 // CustomPricing is a user-defined pricing entry.
 type CustomPricing struct {
-	InputPerM     float64 `json:"inputPerM"`
-	OutputPerM    float64 `json:"outputPerM"`
-	CacheReadPerM float64 `json:"cacheReadPerM"`
+	InputPerM      float64 `json:"inputPerM"`
+	OutputPerM     float64 `json:"outputPerM"`
+	CacheReadPerM  float64 `json:"cacheReadPerM"`
 	CacheWritePerM float64 `json:"cacheWritePerM"`
 }
 
@@ -100,15 +100,15 @@ func Path() string {
 // Load reads the config file. Returns a zero-value Config if file is missing.
 func Load() *Config {
 	cfg := &Config{
-		Theme:          "auto",
-		ColorScheme:    "auto",
-		Locale:         "en",
-		TimeFormat:     "auto",
-		Timezone:       "auto",
+		Theme:           "auto",
+		ColorScheme:     "auto",
+		Locale:          "en",
+		TimeFormat:      "auto",
+		Timezone:        "auto",
 		RefreshInterval: 500,
-		RefreshHz:      1.0,
-		Currency:       "USD",
-		Plan:           "none",
+		RefreshHz:       1.0,
+		Currency:        "USD",
+		Plan:            "none",
 	}
 	p := Path()
 	data, err := os.ReadFile(p)
