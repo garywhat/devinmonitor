@@ -345,20 +345,20 @@ func TestSortNewestFirst(t *testing.T) {
 // jsonWire is the test-side view of one encoded block, mirroring
 // docs/blocks.schema.json.
 type jsonWire struct {
-	ID             string          `json:"id"`
-	StartTime      string          `json:"startTime"`
-	EndTime        string          `json:"endTime"`
-	ActualEndTime  *string         `json:"actualEndTime"`
-	IsActive       bool            `json:"isActive"`
-	IsGap          bool            `json:"isGap"`
-	Models         []string        `json:"models"`
-	Cost           float64         `json:"cost"`
-	Tokens         jsonTokenCounts `json:"tokens"`
-	TotalTokens    int64           `json:"totalTokens"`
-	NonCacheTokens int64           `json:"nonCacheTokens"`
-	UsedPercent    *float64        `json:"usedPercent"`
-	BurnRate       *jsonBurnRate   `json:"burnRate"`
-	Projection     *jsonProjection `json:"projection"`
+	ID             string                `json:"id"`
+	StartTime      string                `json:"startTime"`
+	EndTime        string                `json:"endTime"`
+	ActualEndTime  *string               `json:"actualEndTime"`
+	IsActive       bool                  `json:"isActive"`
+	IsGap          bool                  `json:"isGap"`
+	Models         []string              `json:"models"`
+	Cost           float64               `json:"cost"`
+	Tokens         limit.WireTokens      `json:"tokens"`
+	TotalTokens    int64                 `json:"totalTokens"`
+	NonCacheTokens int64                 `json:"nonCacheTokens"`
+	UsedPercent    *float64              `json:"usedPercent"`
+	BurnRate       *limit.WireBurnRate   `json:"burnRate"`
+	Projection     *limit.WireProjection `json:"projection"`
 }
 
 func decodeJSONBlocks(t *testing.T, out []byte) []map[string]json.RawMessage {

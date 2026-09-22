@@ -139,8 +139,31 @@ data directly. It speaks both stdio framings — the spec's
 `Content-Length` framing and bare newline-delimited JSON — and supports
 JSON-RPC batching, notifications, and `ping`.
 
-Tools exposed: `get_sessions`, `get_session`, `get_cost_summary`,
-`get_alerts`.
+Tools exposed:
+
+| Tool | Purpose |
+|---|---|
+| `get_sessions` | Session list with cost and token usage |
+| `get_session` | Detail for one session by ID |
+| `get_cost_summary` | Aggregated cost (today / week / month / total) |
+| `get_alerts` | Budget thresholds and idle sessions |
+| `get_blocks` | Usage grouped by 5-hour billing window |
+| `get_limits` | Current window status, pace and forecast |
+| `compare_periods` | Compare two periods (defaults to month over month) |
+| `list_reports` | Available report types and export formats |
+
+Protocol behaviour is locked down end-to-end by `scripts/mcp-conformance.sh`,
+which drives the real binary over stdio with the spec's framing.
+
+Read-only **resources** are also available under the `devinmonitor://`
+scheme, so a client can pull a summary without calling a tool:
+
+| Resource | Contents |
+|---|---|
+| `devinmonitor://summary` | Cost, token, request and session totals, with cost provenance |
+| `devinmonitor://models` | Per-model usage table with share of tokens |
+| `devinmonitor://blocks` | Open billing window with burn rate and projection |
+| `devinmonitor://alerts` | Current alerts grouped by kind |
 
 ```json
 {

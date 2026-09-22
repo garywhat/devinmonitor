@@ -127,8 +127,31 @@ MCP 客户端（Claude Desktop、Cursor 等）直接查询本地用量数据。�
 同时支持两种 stdio 帧格式——规范要求的 `Content-Length` 帧与纯
 换行分隔 JSON——并支持 JSON-RPC 批量请求、通知与 `ping`。
 
-暴露的工具：`get_sessions`、`get_session`、`get_cost_summary`、
-`get_alerts`。
+暴露的工具：
+
+| 工具 | 用途 |
+|---|---|
+| `get_sessions` | 会话列表，含成本与 token 用量 |
+| `get_session` | 按 ID 查询单个会话详情 |
+| `get_cost_summary` | 汇总成本（今日 / 本周 / 本月 / 总计） |
+| `get_alerts` | 预算阈值与空闲会话告警 |
+| `get_blocks` | 按 5 小时计费窗口分组的用量 |
+| `get_limits` | 当前窗口状态、节奏与预测 |
+| `compare_periods` | 对比两个时间段（默认环比上月） |
+| `list_reports` | 可用报表类型与导出格式 |
+
+协议行为由 `scripts/mcp-conformance.sh` 端到端锁定：它用规范帧格式驱动真实二进制，
+覆盖 27 项用例（帧正确性、通知静默、批量、resources、全部工具）。
+
+另外提供 `devinmonitor://` 协议下的**只读 resources**，客户端无需
+调用工具即可拉取摘要：
+
+| Resource | 内容 |
+|---|---|
+| `devinmonitor://summary` | 成本、token、请求与会话总量，含成本来源标注 |
+| `devinmonitor://models` | 各模型用量表，含 token 占比 |
+| `devinmonitor://blocks` | 当前计费窗口，含燃烧率与预测 |
+| `devinmonitor://alerts` | 按类别分组的当前告警 |
 
 ```json
 {

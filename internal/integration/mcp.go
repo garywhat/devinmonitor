@@ -13,8 +13,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/garywhat/devinmonitor/internal/i18n"
-	"github.com/garywhat/devinmonitor/internal/model"
-	"github.com/garywhat/devinmonitor/internal/report"
 )
 
 // ---- MCP Server (#83) ----
@@ -206,12 +204,16 @@ func handleMCPRequest(cmd *cobra.Command, req *rpcRequest) *rpcResponse {
 			Result: map[string]interface{}{
 				"protocolVersion": "2024-11-05",
 				"capabilities": map[string]interface{}{
-					"tools": map[string]interface{}{},
+					"tools":     map[string]interface{}{},
+					"resources": map[string]interface{}{},
 				},
 				"serverInfo": map[string]interface{}{
 					"name":    "devinmonitor",
 					"version": "1.0.0",
 				},
+				"instructions": "DevinMonitor exposes local Devin CLI usage: sessions, cost and token analytics, " +
+					"5-hour billing windows and alerts. Tools query specific views; the devinmonitor:// " +
+					"resources are read-only summaries. All data is local and nothing is uploaded.",
 			},
 		}
 
@@ -239,123 +241,43 @@ func handleMCPRequest(cmd *cobra.Command, req *rpcRequest) *rpcResponse {
 	case "tools/call":
 		return handleToolCall(cmd, req)
 
+	case "resources/list":
+		return &rpcResponse{
+			JSONRPC: "2.0",
+			ID:      rawToInterface(req.ID),
+			Result: map[string]interface{}{
+				"resources": mcpResources(),
+			},
+		}
+
+	case "resources/read":
+		var params struct {
+			URI string `json:"uri"`
+		}
+		_ = json.Unmarshal(req.Params, &params)
+		if params.URI == "" {
+			return rpcErrorResp(req.ID, -32602, "missing required parameter: uri")
+		}
+		body, rerr := readMCPResource(cmd, params.URI)
+		if rerr != nil {
+			return &rpcResponse{
+				JSONRPC: "2.0",
+				ID:      rawToInterface(req.ID),
+				Error:   rerr,
+			}
+		}
+		return rpcResult(req.ID, map[string]interface{}{
+			"contents": []map[string]interface{}{
+				{"uri": params.URI, "mimeType": "text/plain", "text": body},
+			},
+		})
+
 	default:
 		return &rpcResponse{
 			JSONRPC: "2.0",
 			ID:      rawToInterface(req.ID),
 			Error:   &rpcError{Code: -32601, Message: "Method not found: " + req.Method},
 		}
-	}
-}
-
-func mcpTools() []mcpTool {
-	var tools []mcpTool
-
-	t1 := mcpTool{Name: "get_sessions", Description: "List all Devin CLI sessions with cost and token usage"}
-	t1.InputSchema.Type = "object"
-	t1.InputSchema.Properties = map[string]interface{}{}
-	tools = append(tools, t1)
-
-	t2 := mcpTool{Name: "get_session", Description: "Get detailed info for a single session by ID"}
-	t2.InputSchema.Type = "object"
-	t2.InputSchema.Properties = map[string]interface{}{
-		"id": map[string]interface{}{"type": "string", "description": "Session ID"},
-	}
-	t2.InputSchema.Required = []string{"id"}
-	tools = append(tools, t2)
-
-	t3 := mcpTool{Name: "get_cost_summary", Description: "Get aggregated cost summary (today, week, month, total)"}
-	t3.InputSchema.Type = "object"
-	t3.InputSchema.Properties = map[string]interface{}{}
-	tools = append(tools, t3)
-
-	t4 := mcpTool{Name: "get_alerts", Description: "Get current alerts (budget thresholds, idle/ghost sessions)"}
-	t4.InputSchema.Type = "object"
-	t4.InputSchema.Properties = map[string]interface{}{}
-	tools = append(tools, t4)
-
-	return tools
-}
-
-func handleToolCall(cmd *cobra.Command, req *rpcRequest) *rpcResponse {
-	var params struct {
-		Name      string          `json:"name"`
-		Arguments json.RawMessage `json:"arguments,omitempty"`
-	}
-	_ = json.Unmarshal(req.Params, &params)
-
-	r := openReader(cmd)
-	defer r.Close()
-
-	switch params.Name {
-	case "get_sessions":
-		ss, err := r.Sessions()
-		if err != nil {
-			return rpcErrorResp(req.ID, -32603, err.Error())
-		}
-		rows := report.BuildSessionRows(ss)
-		items := make([]model.SessionListItem, 0, len(rows))
-		for _, row := range rows {
-			items = append(items, model.SessionListItem{
-				ID:       row.ID,
-				Title:    row.Title,
-				Model:    row.Model,
-				Project:  row.Project,
-				Cost:     row.Cost,
-				Tokens:   row.InputTok + row.OutputTok,
-				Duration: report.FormatDur(row.Duration),
-			})
-		}
-		return rpcResult(req.ID, map[string]interface{}{
-			"content": []map[string]interface{}{
-				{"type": "text", "text": toJSON(items)},
-			},
-		})
-
-	case "get_session":
-		var args struct {
-			ID string `json:"id"`
-		}
-		_ = json.Unmarshal(params.Arguments, &args)
-		if args.ID == "" {
-			return rpcErrorResp(req.ID, -32602, "missing required parameter: id")
-		}
-		s, err := r.Session(args.ID)
-		if err != nil {
-			return rpcErrorResp(req.ID, -32603, err.Error())
-		}
-		return rpcResult(req.ID, map[string]interface{}{
-			"content": []map[string]interface{}{
-				{"type": "text", "text": toJSON(s)},
-			},
-		})
-
-	case "get_cost_summary":
-		ss, err := r.Sessions()
-		if err != nil {
-			return rpcErrorResp(req.ID, -32603, err.Error())
-		}
-		sum := computeCostSummary(ss)
-		return rpcResult(req.ID, map[string]interface{}{
-			"content": []map[string]interface{}{
-				{"type": "text", "text": toJSON(sum)},
-			},
-		})
-
-	case "get_alerts":
-		ss, err := r.Sessions()
-		if err != nil {
-			return rpcErrorResp(req.ID, -32603, err.Error())
-		}
-		alerts := detectAlerts(ss)
-		return rpcResult(req.ID, map[string]interface{}{
-			"content": []map[string]interface{}{
-				{"type": "text", "text": toJSON(alerts)},
-			},
-		})
-
-	default:
-		return rpcErrorResp(req.ID, -32601, "Unknown tool: "+params.Name)
 	}
 }
 

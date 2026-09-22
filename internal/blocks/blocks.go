@@ -12,7 +12,6 @@ package blocks
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"sort"
 	"strconv"
@@ -493,129 +492,10 @@ func formatProjection(p *limit.Projection) string {
 
 // ---- JSON ----
 
-// jsonTokenCounts is the token object emitted per block: the four raw counters
-// of limit.TokenCounts, field for field (docs/blocks.schema.json $defs/tokens
-// forbids any other property). Derived figures live at the top level.
-type jsonTokenCounts struct {
-	Input      int64 `json:"input"`
-	Output     int64 `json:"output"`
-	CacheRead  int64 `json:"cacheRead"`
-	CacheWrite int64 `json:"cacheWrite"`
-}
-
-// jsonBurnRate mirrors limit.BurnRate.
-type jsonBurnRate struct {
-	TokensPerMinute        float64 `json:"tokensPerMinute"`
-	TokensPerMinuteDisplay float64 `json:"tokensPerMinuteDisplay"`
-	CostPerHour            float64 `json:"costPerHour"`
-}
-
-// jsonProjection mirrors limit.Projection.
-type jsonProjection struct {
-	TotalTokens      int64   `json:"totalTokens"`
-	TotalCost        float64 `json:"totalCost"`
-	RemainingMinutes int64   `json:"remainingMinutes"`
-}
-
-// jsonBlock is the machine-readable form of one block, matching
-// docs/blocks.schema.json. The raw entries array is deliberately omitted (too
-// large); the aggregate token counts carry its meaning.
-//
-// burnRate and projection are optional in the schema, so they are omitted when
-// unknown; actualEndTime and usedPercent are emitted as JSON null in that case.
-type jsonBlock struct {
-	ID             string          `json:"id"`
-	StartTime      string          `json:"startTime"`
-	EndTime        string          `json:"endTime"`
-	ActualEndTime  *string         `json:"actualEndTime"`
-	IsActive       bool            `json:"isActive"`
-	IsGap          bool            `json:"isGap"`
-	Models         []string        `json:"models"`
-	Cost           float64         `json:"cost"`
-	Tokens         jsonTokenCounts `json:"tokens"`
-	TotalTokens    int64           `json:"totalTokens"`
-	NonCacheTokens int64           `json:"nonCacheTokens"`
-	UsedPercent    *float64        `json:"usedPercent"`
-	BurnRate       *jsonBurnRate   `json:"burnRate,omitempty"`
-	Projection     *jsonProjection `json:"projection,omitempty"`
-}
-
-// roundTo rounds v to the given number of decimal places: rates carry one
-// decimal, money two, matching docs/blocks.example.json. Percentages are
-// already rounded by limit.UsedPercent.
-func roundTo(v float64, decimals int) float64 {
-	p := math.Pow10(decimals)
-	return math.Round(v*p) / p
-}
-
-// toJSONBlock converts a limit.Block into its wire form.
-//
-// now is the clock the projection extrapolates to; tokenLimit is the
-// --limit-tokens value (0 = unset, which leaves usedPercent null).
-func toJSONBlock(b limit.Block, now time.Time, tokenLimit int64) jsonBlock {
-	models := b.Models
-	if models == nil {
-		models = []string{}
-	}
-	var actualEnd *string
-	if !b.ActualEndTime.IsZero() {
-		s := b.ActualEndTime.Format(time.RFC3339)
-		actualEnd = &s
-	}
-
-	out := jsonBlock{
-		ID:            b.ID,
-		StartTime:     b.StartTime.Format(time.RFC3339),
-		EndTime:       b.EndTime.Format(time.RFC3339),
-		ActualEndTime: actualEnd,
-		IsActive:      b.IsActive,
-		IsGap:         b.IsGap,
-		Models:        models,
-		Cost:          b.Cost,
-		Tokens: jsonTokenCounts{
-			Input:      b.Tokens.Input,
-			Output:     b.Tokens.Output,
-			CacheRead:  b.Tokens.CacheRead,
-			CacheWrite: b.Tokens.CacheWrite,
-		},
-		TotalTokens:    b.Tokens.Total(),
-		NonCacheTokens: b.Tokens.NonCache(),
-	}
-
-	// Gap blocks carry no usage, so none of the derived figures apply.
-	if b.IsGap {
-		return out
-	}
-
-	if tokenLimit > 0 {
-		out.UsedPercent = limit.UsedPercent(&b, tokenLimit)
-	}
-	if rate := limit.BurnRateOf(&b); rate != nil {
-		out.BurnRate = &jsonBurnRate{
-			TokensPerMinute:        roundTo(rate.TokensPerMinute, 1),
-			TokensPerMinuteDisplay: roundTo(rate.TokensPerMinuteDisplay, 1),
-			CostPerHour:            roundTo(rate.CostPerHour, 2),
-		}
-	}
-	if b.IsActive {
-		if p := limit.Project(&b, now); p != nil {
-			out.Projection = &jsonProjection{
-				TotalTokens:      p.TotalTokens,
-				TotalCost:        roundTo(p.TotalCost, 2),
-				RemainingMinutes: p.RemainingMinutes,
-			}
-		}
-	}
-	return out
-}
-
 // blocksJSON marshals the block list as indented JSON (2 spaces) with a
 // trailing newline, preserving the given order. An empty list marshals as "[]".
 func blocksJSON(bs []limit.Block, now time.Time, tokenLimit int64) ([]byte, error) {
-	out := make([]jsonBlock, 0, len(bs))
-	for _, b := range bs {
-		out = append(out, toJSONBlock(b, now, tokenLimit))
-	}
+	out := limit.WireBlocks(bs, now, tokenLimit)
 	data, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		return nil, err
