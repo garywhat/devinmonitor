@@ -314,6 +314,21 @@ since been fixed are kept with their resolution so the reasoning is not lost.
    lost or duplicated across a DST transition, which shifted the boundary, and
    `filter.Apply` compares with a strict `After`, so the bound now uses
    `AddDate(0, 0, 1)` and next-midnight is correctly excluded.
+11. **The v17 `subagent_heads` table exists but is empty.** The reader is
+   implemented and version-gated (`>= 17`), and the `agents` command grows a
+   `Chain heads` column **only when rows exist** — on every database measured so
+   far it has zero rows, verified three ways (total count, table existence, and
+   filtered to the five most recently active sessions). Two consequences are
+   worth recording. First, the feature is deliberately inert today: a probe
+   comparing the old and new binaries byte-for-byte on the real database found
+   them identical, which is the property we wanted and not a defect. Second,
+   because there is no populated row anywhere, the semantics of `chain_node_id`
+   are **not** asserted beyond its column name — the schema itself states that
+   `(session_id, agent_id)` is the primary key, so there can never be more than
+   one head per agent per session, and a per-subagent join against
+   `model.SubAgentCall.AgentID` is plausible but unverifiable. Revisit once Devin
+   starts writing it.
+
 11. **`other`-bucket semantics for error analysis** are a deliberate trade-off,
    described in item 5. If recall matters more than precision, the pattern table
    is the lever — not the bucket.

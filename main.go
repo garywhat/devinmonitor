@@ -38,8 +38,10 @@ import (
 var (
 	flagDataDir   string
 	flagLocale    string
+	flagNoCost    bool
 	flagBreakdown bool
 	flagStartDay  string
+	flagLast      int
 	flagInterval  int
 
 	// version is injected at build time via ldflags:
@@ -99,6 +101,23 @@ func refreshPricingCache(ttl time.Duration, now time.Time) {
 	if err := pricing.SaveCache(pricing.CachePath(), c); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: price catalogue not saved: %v\n", err)
 	}
+}
+
+// applyNoCost suppresses cost columns when --no-cost was passed.
+//
+// Only table columns are affected; cost lines inside panels and popups (the
+// snapshot panel, the blocks detail view, the live dashboard) are not, and the
+// comment on the flag says so. Hiding those would need a different mechanism,
+// and the use case this exists for is screenshotting a table.
+func applyNoCost() {
+	if !flagNoCost {
+		ui.HideColumns()
+		return
+	}
+	ui.HideColumns(
+		i18n.T("common.cost"),
+		i18n.T("common.costPct"),
+	)
 }
 
 func installPricingSources() {
@@ -193,10 +212,15 @@ func main() {
 			if flagLocale != "" {
 				i18n.SetLocale(flagLocale)
 			}
+			// --no-cost removes cost columns from every table. The headers are
+			// resolved AFTER any locale switch above, because they are matched
+			// by their translated text.
+			applyNoCost()
 		},
 	}
 	root.PersistentFlags().StringVar(&flagDataDir, "data-dir", "", i18n.T("help.dataDir"))
 	root.PersistentFlags().StringVar(&flagLocale, "locale", "", i18n.T("help.locale"))
+	root.PersistentFlags().BoolVar(&flagNoCost, "no-cost", false, i18n.T("help.noCost"))
 
 	// Prices and aliases are process-global: install them once here so the
 	// reports, the live dashboard, MCP and the web API all resolve the same
@@ -544,26 +568,6 @@ func cmdSession() *cobra.Command {
 
 // ---- daily ----
 
-func cmdDaily() *cobra.Command {
-	c := &cobra.Command{
-		Use:   "daily",
-		Short: i18n.T("cmd.daily"),
-		Run: func(cmd *cobra.Command, args []string) {
-			r := openReader()
-			defer r.Close()
-			ss, err := r.Sessions()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "%v\n", err)
-				os.Exit(1)
-			}
-			rows := report.BuildDaily(ss)
-			printTimeRows(rows, flagBreakdown, modeDaily)
-		},
-	}
-	c.Flags().BoolVar(&flagBreakdown, "breakdown", false, i18n.T("help.breakdown"))
-	return c
-}
-
 // ---- weekly ----
 
 func cmdWeekly() *cobra.Command {
@@ -578,12 +582,13 @@ func cmdWeekly() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
-			rows := report.BuildWeekly(ss, report.ParseWeekday(flagStartDay))
+			rows := lastPeriods(report.BuildWeekly(ss, report.ParseWeekday(flagStartDay)), flagLast)
 			printTimeRows(rows, flagBreakdown, modeWeekly)
 		},
 	}
 	c.Flags().BoolVar(&flagBreakdown, "breakdown", false, i18n.T("help.breakdown"))
 	c.Flags().StringVar(&flagStartDay, "start-day", "monday", i18n.T("help.startDay"))
+	c.Flags().IntVar(&flagLast, "last", 0, i18n.T("help.last"))
 	return c
 }
 
@@ -601,11 +606,12 @@ func cmdMonthly() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
-			rows := report.BuildMonthly(ss)
+			rows := lastPeriods(report.BuildMonthly(ss), flagLast)
 			printTimeRows(rows, flagBreakdown, modeMonthly)
 		},
 	}
 	c.Flags().BoolVar(&flagBreakdown, "breakdown", false, i18n.T("help.breakdown"))
+	c.Flags().IntVar(&flagLast, "last", 0, i18n.T("help.last"))
 	return c
 }
 
@@ -617,6 +623,18 @@ const (
 	modeWeekly
 	modeMonthly
 )
+
+// lastPeriods keeps only the most recent n time buckets.
+//
+// buildTimeBuckets returns buckets sorted by label ascending, so "most recent"
+// is the tail of the slice. n <= 0 means no limit, which is the default and
+// keeps the flag out of the way of existing invocations.
+func lastPeriods(rows []report.TimeRow, n int) []report.TimeRow {
+	if n <= 0 || n >= len(rows) {
+		return rows
+	}
+	return rows[len(rows)-n:]
+}
 
 func printTimeRows(rows []report.TimeRow, breakdown bool, mode timeRowMode) {
 	// Determine the label column header and a transform for the label.
@@ -1098,12 +1116,56 @@ func cmdAgents() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
-			stats := report.BuildAgentStats(ss)
+			// Chain heads (schema v17+) are optional metadata: Devin writes the
+			// subagent_heads table only once it starts tracking them, and that
+			// table is empty on every database observed so far.
+			// reader.SubagentHeads reports "absent" and "empty" the same way —
+			// an empty slice and a nil error — so `heads` stays nil here and the
+			// column below is simply never added on current data.
+			//
+			// The read goes through a narrow inline facet instead of the
+			// reader.Reader interface, which is how this codebase already
+			// reaches the other v1Reader extension methods (see
+			// internal/filterexport's filteringReader). A failed read of this
+			// optional table warns and keeps going: losing one column is a
+			// smaller problem than losing the whole agents report.
+			var heads map[string][]report.AgentChainHead
+			if hr, ok := r.(interface {
+				SubagentHeads(sessionID string) ([]reader.SubagentHead, error)
+			}); ok {
+				for _, s := range ss {
+					hs, err := hr.SubagentHeads(s.ID)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "chain heads for %s: %v\n", s.ID, err)
+						continue
+					}
+					for _, h := range hs {
+						if heads == nil {
+							heads = map[string][]report.AgentChainHead{}
+						}
+						heads[s.ID] = append(heads[s.ID], report.AgentChainHead{
+							AgentID:     h.AgentID,
+							ChainNodeID: h.ChainNodeID,
+						})
+					}
+				}
+			}
+			stats := report.BuildAgentStatsWithHeads(ss, heads)
 			if len(stats) == 0 {
 				fmt.Println(i18n.T("common.none"))
 				return
 			}
-			t := ui.NewTable(
+			// The "Chain heads" column appears ONLY for databases where Devin
+			// has started recording chain heads. With none recorded it is left
+			// off entirely, so a user never sees a column they can never
+			// populate, and the table stays byte-for-byte what it was before
+			// this feature existed — the tool must not imply that subagent
+			// chain tracking is happening when Devin is not writing it.
+			//
+			// The header is a literal because the i18n catalogs are owned by
+			// another change; every other header below goes through i18n.T.
+			showHeads := report.HasChainHeads(stats)
+			headers := []string{
 				i18n.T("common.profile"),
 				i18n.T("common.calls"),
 				i18n.T("common.sessions"),
@@ -1117,9 +1179,15 @@ func cmdAgents() *cobra.Command {
 				i18n.T("common.maxTask"),
 				i18n.T("common.avgOut"),
 				i18n.T("common.maxOut"),
-			).RightAlign(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+			}
+			align := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+			if showHeads {
+				headers = append(headers, "Chain heads")
+				align = append(align, len(headers)-1)
+			}
+			t := ui.NewTable(headers...).RightAlign(align...)
 			// Accumulate totals.
-			var totCalls, totSess, totBG, totFG, totDone, totWaits int
+			var totCalls, totSess, totBG, totFG, totDone, totWaits, totChainHeads int
 			var totDur time.Duration
 			var totTask, totOut int
 			for _, st := range stats {
@@ -1147,7 +1215,7 @@ func cmdAgents() *cobra.Command {
 				if st.MaxOutputLen > 0 {
 					maxOut = fmt.Sprintf("%d", st.MaxOutputLen)
 				}
-				t.Row(
+				row := []string{
 					st.Profile,
 					fmt.Sprintf("%d", st.Calls),
 					fmt.Sprintf("%d", st.Sessions),
@@ -1161,13 +1229,42 @@ func cmdAgents() *cobra.Command {
 					maxTask,
 					avgOut,
 					maxOut,
-				)
+				}
+				if showHeads {
+					// Count plus the recorded head node IDs, which are reported
+					// as-is: chain_node_id is only the column's own name, and
+					// there is no data anywhere to check a richer reading
+					// against, so none is claimed.
+					cell := "-"
+					if st.ChainHeads > 0 {
+						// One head per subagent, so cap the id list rather than
+						// letting a busy session swamp the table.
+						const maxIDs = 6
+						ids := st.ChainHeadNodes
+						extra := 0
+						if len(ids) > maxIDs {
+							extra = len(ids) - maxIDs
+							ids = ids[:maxIDs]
+						}
+						parts := make([]string, 0, len(ids))
+						for _, n := range ids {
+							parts = append(parts, strconv.Itoa(n))
+						}
+						cell = fmt.Sprintf("%d (%s)", st.ChainHeads, strings.Join(parts, ","))
+						if extra > 0 {
+							cell += fmt.Sprintf(",+%d", extra)
+						}
+					}
+					row = append(row, cell)
+				}
+				t.Row(row...)
 				totCalls += st.Calls
 				totSess += st.Sessions
 				totBG += st.Background
 				totFG += st.Foreground
 				totDone += st.Completed
 				totWaits += st.ReadCalls
+				totChainHeads += st.ChainHeads
 				totDur += st.AvgDuration * time.Duration(len(st.Durations))
 				totTask += st.AvgTaskLen * len(st.TaskLens)
 				totOut += st.AvgOutputLen * len(st.OutputLens)
@@ -1185,7 +1282,7 @@ func cmdAgents() *cobra.Command {
 			if totDone > 0 && totOut > 0 {
 				totAvgOut = fmt.Sprintf("%d", totOut/totDone)
 			}
-			t.TotalRow(
+			totRow := []string{
 				"TOTAL",
 				fmt.Sprintf("%d", totCalls),
 				fmt.Sprintf("%d", totSess),
@@ -1196,7 +1293,15 @@ func cmdAgents() *cobra.Command {
 				totAvgDur, "-",
 				totAvgTask, "-",
 				totAvgOut, "-",
-			)
+			}
+			if showHeads {
+				// Every head is credited to exactly one session's dominant
+				// profile, so this sum is the exact number of head records in
+				// the report's sessions; the per-profile counts above are exact
+				// only when a session used one profile.
+				totRow = append(totRow, fmt.Sprintf("%d", totChainHeads))
+			}
+			t.TotalRow(totRow...)
 			fmt.Println(t.String())
 		},
 	}

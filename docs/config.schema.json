@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/garywhat/devinmonitor/main/docs/config.schema.json",
+  "title": "devinmonitor configuration",
+  "description": "Hand-editable configuration file for `devinmonitor`, kept at `<config dir>/config.json` — by default `~/.devinmonitor/config.json`, relocated by the `DEVINMONITOR_CONFIG_DIR` environment variable (on Windows the default directory is `%APPDATA%\\devinmonitor`). The file is written by `devinmonitor config set <key> <value>` (and by the interactive TUI settings pane), read once at startup, and holds the tool's display preferences, polling cadence, soft spend budgets, currency and ACU conversion, Devin subscription-plan tracking, desktop/webhook notification targets and the per-model lookup tables. Every field is optional: an absent field keeps the default the tool applies when it loads the file, and each property below names that default. Unknown keys are rejected by this schema, and the Go reader ignores them, so a typo here would be silently dropped at runtime — the schema turns that into a loud editor error instead. Per-model price overrides live in a separate file, `<config dir>/pricing.json`, described by docs/pricing.schema.json and not duplicated here; the legacy `customPricing` object below is still honoured but takes lower precedence than that file. Point a `$schema` key at this document to get validation and autocomplete while editing by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional self-reference to this schema document, so an editor can offer autocomplete and validation for the file. A relative path such as `./config.schema.json` (when this file sits next to the config) or the published `$id` URL both work. Purely advisory to editors: the reader ignores this key, and omitting it changes nothing about how the configuration is applied."
+    },
+    "theme": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "catppuccin",
+        "dark",
+        "dracula",
+        "everforest",
+        "github",
+        "gruvbox",
+        "gruvbox-light",
+        "light",
+        "monokai",
+        "nord",
+        "rose-pine",
+        "solarized-dark",
+        "solarized-light",
+        "tokyo-night"
+      ],
+      "description": "Named colour palette for the terminal UI. The set is exactly what the `live` theme registry registers in internal/live/themes.go, which is also what `devinmonitor theme` lists and validates against; an unknown name is refused by `theme set` and falls back to `dark` when read straight from the file. `auto` (the default) picks `light` or `dark` from the terminal's background hints and falls back to `dark` when the terminal says nothing."
+    },
+    "colorScheme": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "light",
+        "dark"
+      ],
+      "description": "Whether the UI should assume a light or dark appearance, overriding terminal-background detection (`auto`, the default, keeps the detection). Currently only stored by the tool — the renderer keys off `theme` — but it is validated here so the file stays honest about the three documented values."
+    },
+    "locale": {
+      "type": "string",
+      "enum": [
+        "en",
+        "zh"
+      ],
+      "description": "Language for translated CLI and TUI strings. Exactly two catalogs are compiled in (internal/i18n): `en` (the default) and `zh`. System-detected values such as `en-US` or `zh-CN` are normalised to one of these two, and anything unrecognised normalises to `en`, so only these two codes are worth writing."
+    },
+    "timeFormat": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "12h",
+        "24h"
+      ],
+      "description": "Clock format used when rendering times: `auto` (the default) follows the locale, `12h` forces a 12-hour clock with an am/pm marker, `24h` forces a 24-hour clock. These are the three options the interactive settings pane offers for this key."
+    },
+    "timezone": {
+      "type": "string",
+      "description": "Timezone used for day, week and month boundaries and for rendered timestamps. `auto` (the default) detects the zone from the `TZ` environment variable or the operating system; any other value is used verbatim as an IANA zone name such as `Europe/London` or `Asia/Shanghai`. Deliberately not an enum: the acceptable set is the full IANA database, of which the settings pane only suggests a few common names."
+    },
+    "dateFormat": {
+      "type": "string",
+      "description": "Optional user-supplied date layout string, stored verbatim and left empty (`\"\"`) by default. Not an enum: any layout the tool's date formatter accepts may be written here, and an empty value means \"use the built-in format\"."
+    },
+    "abbreviateTokens": {
+      "type": "boolean",
+      "description": "Render large token counts in a shortened form (`1.2M` instead of `1,234,567`). Defaults to false when absent."
+    },
+    "noEmoji": {
+      "type": "boolean",
+      "description": "Suppress emoji and pictographic glyphs in status output, for terminals or fonts that render them poorly. Defaults to false when absent."
+    },
+    "noHeader": {
+      "type": "boolean",
+      "description": "Suppress the decorative header block above tables and panels, for dense output or piping. Defaults to false when absent."
+    },
+    "refreshInterval": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Polling interval for live usage and dashboard refreshes, in milliseconds. Defaults to 500. Values below `live.MinIntervalMs` (100) are floored to 100 by the UI and by `config set refreshInterval`, because a sub-100ms poll is a busy loop rather than a refresh rate; a negative value is meaningless and is rejected here."
+    },
+    "refreshHz": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Display refresh rate in hertz, complementary to `refreshInterval` and defaulting to 1.0. Non-negative: a negative frequency has no meaning, and 0 means the rate display has nothing to show."
+    },
+    "budgetDaily": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Soft daily spend limit in the configured currency. 0 (the default) disables it. The limit never blocks work: when today's cost reaches it the status report turns into an exceeded-budget warning, and at 80% of it into an approaching-budget warning; both warnings respect `notifyDesktop`."
+    },
+    "budgetWeekly": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Soft weekly spend limit in the configured currency, 0 (the default) to disable. Same non-blocking semantics as `budgetDaily`, applied to the current week's cost."
+    },
+    "budgetMonthly": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Soft monthly spend limit in the configured currency, 0 (the default) to disable. Also used as the percentage base for the monthly budget in the snapshot document, so it is the budget the machine-readable output reports against."
+    },
+    "currency": {
+      "type": "string",
+      "enum": [
+        "AED", "AFN", "ALL", "AMD", "ANG", "AOA", "ARS",
+        "AUD", "AWG", "AZN", "BAM", "BBD", "BDT", "BGN",
+        "BHD", "BIF", "BMD", "BND", "BOB", "BOV", "BRL",
+        "BSD", "BTN", "BWP", "BYN", "BZD", "CAD", "CDF",
+        "CHE", "CHF", "CHW", "CLF", "CLP", "CNY", "COP",
+        "COU", "CRC", "CUC", "CUP", "CVE", "CZK", "DJF",
+        "DKK", "DOP", "DZD", "EGP", "ERN", "ETB", "EUR",
+        "FJD", "FKP", "GBP", "GEL", "GHS", "GIP", "GMD",
+        "GNF", "GTQ", "GYD", "HKD", "HNL", "HRK", "HTG",
+        "HUF", "IDR", "ILS", "INR", "IQD", "IRR", "ISK",
+        "JMD", "JOD", "JPY", "KES", "KGS", "KHR", "KMF",
+        "KPW", "KRW", "KWD", "KYD", "KZT", "LAK", "LBP",
+        "LKR", "LRD", "LSL", "LYD", "MAD", "MDL", "MGA",
+        "MKD", "MMK", "MNT", "MOP", "MRU", "MUR", "MVR",
+        "MWK", "MXN", "MXV", "MYR", "MZN", "NAD", "NGN",
+        "NIO", "NOK", "NPR", "NZD", "OMR", "PAB", "PEN",
+        "PGK", "PHP", "PKR", "PLN", "PYG", "QAR", "RON",
+        "RSD", "RUB", "RWF", "SAR", "SBD", "SCR", "SDG",
+        "SEK", "SGD", "SHP", "SLE", "SLL", "SOS", "SRD",
+        "SSP", "STN", "SVC", "SYP", "SZL", "THB", "TJS",
+        "TMT", "TND", "TOP", "TRY", "TTD", "TWD", "TZS",
+        "UAH", "UGX", "USD", "USN", "UYI", "UYU", "UYW",
+        "UZS", "VED", "VES", "VND", "VUV", "WST", "XAF",
+        "XAG", "XAU", "XBA", "XBB", "XBC", "XBD", "XCD",
+        "XCG", "XDR", "XOF", "XPD", "XPF", "XPT", "XSU",
+        "XTS", "XUA", "XXX", "YER", "ZAR", "ZMW", "ZWG",
+        "ZWL"
+      ],
+      "description": "ISO 4217 code of the currency every cost figure is displayed in, defaulting to `USD`. The acceptable set is the currency table internal/budget/currency.go validates against (`budget.IsValidCurrency`, used by `devinmonitor currency set`); the interactive settings pane only suggests the five common codes USD, EUR, CNY, GBP and JPY, but all codes in the table are legal. Only a subset has a hardcoded USD exchange rate — for the rest the amount is shown unconverted — so costs are not silently reinterpreted."
+    },
+    "acuRate": {
+      "type": "number",
+      "minimum": 0,
+      "description": "USD value of one ACU (Devin's account credit unit), used to convert ACU-based cost figures into money. 0 (the default) means \"one ACU is one USD\", because the conversion helper only multiplies when the rate is strictly positive. Negative rates are meaningless and rejected."
+    },
+    "plan": {
+      "type": "string",
+      "enum": [
+        "none",
+        "custom"
+      ],
+      "description": "Which Devin subscription the user is on, for plan-versus-API-equivalent savings tracking. `none` (the default) disables that view; `custom` means the subscription is described by the `planMonthly` and `planACULimit` values in this file rather than by a built-in plan table. The field is a free-form label in the Go struct, but these are the two documented values."
+    },
+    "planMonthly": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Monthly cost of the subscription in USD, defaulting to 0. Used as the plan cost side of the savings comparison and ignored while it is 0 (the savings view reports \"no plan\" in that case)."
+    },
+    "planACULimit": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Monthly ACU allowance included in the subscription, defaulting to 0. Used as the denominator for plan usage percentage and for the overage figure; 0 means unlimited / not tracked."
+    },
+    "pricingAutoFetch": {
+      "type": "boolean",
+      "description": "Allow the price catalogue to be refreshed from the network automatically, defaulting to false. The tool is local-first and must never reach out unasked, so this stays off unless the user opts in; `devinmonitor pricing fetch` downloads the catalogue explicitly either way."
+    },
+    "resetHour": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 23,
+      "description": "Hour of the day, 0-23 in the configured `timezone`, at which daily usage is considered to reset, defaulting to 0 (midnight). Both `config set resetHour` and the interactive reset-hour command reject anything outside this range."
+    },
+    "notifyDesktop": {
+      "type": "boolean",
+      "description": "Send a desktop notification when a budget warning or limit event fires. Defaults to false when absent, so notifications stay opt-in."
+    },
+    "notifyWebhook": {
+      "type": "string",
+      "description": "Webhook URL that budget and limit notifications are POSTed to — a Discord, Slack or Telegram endpoint. Empty (`\"\"`, the default) disables webhook delivery. No format constraint is imposed, because the payload shape is provider-specific and a bad URL should fail at delivery time with the provider's own error."
+    },
+    "modelAliases": {
+      "type": "object",
+      "description": "Maps a provider's model name onto the canonical model name used for pricing lookups, so a renamed or re-released model still finds its price. An open map of arbitrary names: keys are the names as recorded in the Devin CLI usage database, values are the canonical names. Adding an alias for a model you do not use is harmless. Empty (the default) means no aliases.",
+      "additionalProperties": {
+        "type": "string",
+        "description": "Canonical model name whose pricing entry should be used for this alias."
+      }
+    },
+    "customPricing": {
+      "type": "object",
+      "description": "Legacy per-model price overrides, keyed by model name, each giving the four per-million-token rates. These are applied below the separate `<config dir>/pricing.json` override file: an entry present in both loses. Prefer that file for new overrides; this object is kept for older configs. Empty (the default) means no overrides.",
+      "additionalProperties": {
+        "$ref": "#/$defs/customPricing"
+      }
+    },
+    "savedFlags": {
+      "type": "object",
+      "description": "Free-form string map where the tool persists small preferences between runs, so a flag typed once becomes the default next time. Currently used for command aliases (`alias:<name>` -> the command it expands to), the sessions sort order (`sessions.sort`) and the TUI view mode (`view`, either `list` or `pane`). An open map by design: unknown keys are simply never consulted, and empty (the default) means nothing has been saved yet.",
+      "additionalProperties": {
+        "type": "string",
+        "description": "Persisted value for this key, interpreted by whichever command owns the key."
+      }
+    }
+  },
+  "$defs": {
+    "customPricing": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One model's user-supplied pricing in the legacy config override map. All four rates are required when the entry exists and are given in USD per 1,000,000 tokens, the same unit the built-in price table and the pricing.json override file use. There is no `free` key here — the config struct has no such field — so a model that should cost nothing is expressed with all four rates at 0.",
+      "required": [
+        "inputPerM",
+        "outputPerM",
+        "cacheReadPerM",
+        "cacheWritePerM"
+      ],
+      "properties": {
+        "inputPerM": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Price of uncached prompt (input) tokens, in USD per 1,000,000 tokens. Multiplied by the input token count when devinmonitor estimates cost for this model."
+        },
+        "outputPerM": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Price of completion (output) tokens, in USD per 1,000,000 tokens. Usually the highest of the four rates and the one that dominates a report's cost figure."
+        },
+        "cacheReadPerM": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Price of prompt tokens served from the prompt cache, in USD per 1,000,000 tokens. Typically a fraction of `inputPerM`, since a cache hit is not new work, but it is still a billed token and therefore priced rather than ignored."
+        },
+        "cacheWritePerM": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Price of prompt tokens written into the prompt cache, in USD per 1,000,000 tokens. On some providers this equals `inputPerM` and on others it is a premium over it; set 0 for a provider that does not bill cache writes separately."
+        }
+      }
+    }
+  }
+}

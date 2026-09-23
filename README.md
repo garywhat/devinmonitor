@@ -67,7 +67,9 @@ count breakdown.
 
 Token, request, sub-agent, and cost totals per day / week / month,
 with the list of models used. Use `--breakdown` to add a per-model
-sub-table. `weekly` supports `--start-day monday|sunday|...`.
+sub-table, and `--last N` to show only the N most recent periods
+(`--last 0`, the default, means all of them). `weekly` supports
+`--start-day monday|sunday|...`.
 
 ![Daily report](docs/images/daily.png)
 
@@ -130,6 +132,26 @@ devinmonitor export projects --format json
 Formats: `csv`, `markdown`, `html`, `json`. An unknown report type or
 format exits non-zero with a usage hint. `--detailed` still embeds the
 per-request detail in the `sessions` document.
+
+### `share` — a sanitised report safe to send to someone else
+
+`share` writes an **aggregate-only** report: no absolute paths (projects are
+reduced to their last path segment), no session IDs, no error text, no message
+content. It prints the redaction manifest it applied, and `--dry-run` shows
+what would be removed before anything is written.
+
+```bash
+devinmonitor share --dry-run                      # review the redactions first
+devinmonitor share                                # JSON to stdout
+devinmonitor share --output report.json           # JSON to a file
+devinmonitor share --format html --output report.html
+devinmonitor share --include-errors               # add error-category counts
+```
+
+`--format html` produces a **self-contained page**: inline CSS, no JavaScript,
+no external font, image or stylesheet, so it renders correctly from disk with
+the network switched off. It carries the same aggregate figures as the JSON
+plus the redaction manifest, so a recipient can audit what was removed.
 
 ## MCP server
 
@@ -242,7 +264,14 @@ devinmonitor mcp
 ```
 --data-dir string   Devin data directory (default: auto-detect)
 --locale string     Language: en / zh (default: auto-detect from system)
+--no-cost           Hide cost columns in every table (for screenshots and sharing)
 ```
+
+`--no-cost` is a persistent flag, so it works before or after the
+subcommand: `devinmonitor --no-cost sessions` and
+`devinmonitor sessions --no-cost` are equivalent. It removes the cost
+and cost-percentage **table columns**; cost figures printed inside panels
+and popups are not affected.
 
 ### Live dashboard controls
 
@@ -332,6 +361,21 @@ Pricing is resolved locally and never fetched at read time. If a remote price
 source is ever added it must **write** into `pricing.json` rather than being
 consulted during a report, so the tool stays usable offline and the no-network
 invariant holds.
+
+### Editor autocomplete for `config.json`
+
+`devinmonitor config schema` prints the schema URL, the resolved config-file
+path, and the local `docs/config.schema.json` when it is checked out. Add the
+`$schema` key to your `config.json` and your editor will autocomplete and
+validate it — including the theme enum, so a palette you never registered is
+rejected as you type rather than silently ignored:
+
+```json
+{ "$schema": "https://raw.githubusercontent.com/garywhat/devinmonitor/main/docs/config.schema.json" }
+```
+
+The schema forbids unknown keys, so a typo fails loudly. `pricing.json` has its
+own separate schema; see below.
 
 ### Remote price catalogue (opt-in)
 

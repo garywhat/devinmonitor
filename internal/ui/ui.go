@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
@@ -177,7 +179,111 @@ func (t *TableBuilder) TotalRow(values ...string) *TableBuilder {
 
 // String renders the table as a string with rounded borders.
 // If the table exceeds terminal width, text columns are truncated to fit.
+// ---- column suppression (--no-cost) ----
+
+var (
+	hiddenMu      sync.RWMutex
+	hiddenHeaders = map[string]bool{}
+)
+
+// HideColumns suppresses table columns by header text in every table rendered
+// afterwards; passing no names clears the set.
+//
+// Columns are matched by their header rather than by index because the call
+// sites build tables independently and their column order differs. Doing the
+// filtering here — in the one place every table passes through — is what lets a
+// global --no-cost flag work without editing a dozen call sites, each of which
+// could otherwise forget to honour it.
+func HideColumns(headers ...string) {
+	hiddenMu.Lock()
+	defer hiddenMu.Unlock()
+	hiddenHeaders = map[string]bool{}
+	for _, h := range headers {
+		if h != "" {
+			hiddenHeaders[h] = true
+		}
+	}
+}
+
+// HiddenColumns returns the currently suppressed header texts, for tests and
+// for reporting what a flag did.
+func HiddenColumns() []string {
+	hiddenMu.RLock()
+	defer hiddenMu.RUnlock()
+	out := make([]string, 0, len(hiddenHeaders))
+	for h := range hiddenHeaders {
+		out = append(out, h)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// visibleIdx returns which column indices survive, or nil when nothing is
+// suppressed.
+func (t *TableBuilder) visibleIdx() []int {
+	hiddenMu.RLock()
+	defer hiddenMu.RUnlock()
+	if len(hiddenHeaders) == 0 {
+		return nil
+	}
+	keep := make([]int, 0, len(t.headers))
+	for i, h := range t.headers {
+		if !hiddenHeaders[h] {
+			keep = append(keep, i)
+		}
+	}
+	return keep
+}
+
+// String renders the table, dropping any column a caller has suppressed.
 func (t *TableBuilder) String() string {
+	keep := t.visibleIdx()
+	if keep == nil {
+		return t.render()
+	}
+	if len(keep) == 0 {
+		return ""
+	}
+	// Render a projected copy rather than threading the filter through every
+	// width calculation below.
+	f := *t
+	f.headers = projectStrings(t.headers, keep)
+	f.rightAlign = projectBools(t.rightAlign, keep)
+	f.rows = make([][]string, 0, len(t.rows))
+	for _, r := range t.rows {
+		f.rows = append(f.rows, projectStrings(r, keep))
+	}
+	if t.totalRow != nil {
+		f.totalRow = projectStrings(t.totalRow, keep)
+	}
+	return f.render()
+}
+
+func projectStrings(in []string, keep []int) []string {
+	out := make([]string, 0, len(keep))
+	for _, i := range keep {
+		if i < len(in) {
+			out = append(out, in[i])
+		} else {
+			out = append(out, "")
+		}
+	}
+	return out
+}
+
+func projectBools(in []bool, keep []int) []bool {
+	out := make([]bool, 0, len(keep))
+	for _, i := range keep {
+		if i < len(in) {
+			out = append(out, in[i])
+		} else {
+			out = append(out, false)
+		}
+	}
+	return out
+}
+
+func (t *TableBuilder) render() string {
 	nCols := len(t.headers)
 	if nCols == 0 {
 		return ""

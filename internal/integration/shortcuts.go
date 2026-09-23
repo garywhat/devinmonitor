@@ -331,6 +331,7 @@ func buildSessionsTable(rows []report.SessionRow, verbose bool) *ui.TableBuilder
 
 var cmdDailyEnhanced = func() *cobra.Command {
 	var breakdown, watch, today bool
+	var last int
 	c := &cobra.Command{
 		Use:   "daily",
 		Short: i18n.T("cmd.daily"),
@@ -353,6 +354,11 @@ var cmdDailyEnhanced = func() *cobra.Command {
 					ss = filtered
 				}
 				rows := report.BuildDaily(ss)
+				if last > 0 && last < len(rows) {
+					// BuildDaily returns buckets sorted by label ascending, so
+					// the most recent N are the tail of the slice.
+					rows = rows[len(rows)-last:]
+				}
 				printDailyRows(rows, breakdown)
 				return nil
 			}
@@ -376,6 +382,7 @@ var cmdDailyEnhanced = func() *cobra.Command {
 	c.Flags().BoolVar(&watch, "watch", false, "auto-refresh every N seconds")
 	c.Flags().BoolVar(&today, "today", false, "show only today's data")
 	c.Flags().Int("interval", 3, "refresh interval in seconds (for --watch)")
+	c.Flags().IntVar(&last, "last", 0, i18n.T("help.last"))
 	return c
 }
 

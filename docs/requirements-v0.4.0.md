@@ -1,5 +1,10 @@
 # DevinMonitor v0.4.0 需求规格
 
+> **状态：M1–M5 全部实现完毕**（v0.4.1 / v0.4.2 / v0.4.3 已发布）。
+> 下方验收项逐条核对过，唯一未达标的是 §3.3 里 `--statusline` 的宽度限制。
+> 验证来源：`internal/{limit,status,state,blocks,errscan,pricing,share,reader}` 的单元测试，
+> 以及 M1/M2/M4-M5 黑盒验收脚本与 `scripts/mcp-conformance.sh`。
+
 > 基于同类产品**源码级对照**生成的需求文档。
 > 范围决策：**专注 Devin，不做多源适配**（用户已明确）。
 
@@ -148,12 +153,12 @@ devinmonitor blocks --since/--until       # 日期过滤（复用现有 filter �
 
 ### 1.7 验收标准
 
-- [ ] 构造边界用例：恰好 `sinceStart == D`、`sinceLast == D`（**不**切块，因为条件是严格 `>`）
-- [ ] gap 块仅在 `sinceLast > D` 时出现，且不计入燃烧率
-- [ ] 活跃判定在 `now` 跨过 `end` 后立即变为非活跃
-- [ ] 单条消息的窗口不 panic（`durationMin <= 0` 时返回 nil 而非除零）
-- [ ] 未配置限额时不输出 pace/百分比
-- [ ] 表格在 80 列终端下不溢出
+- [x] 构造边界用例：恰好 `sinceStart == D`、`sinceLast == D`（**不**切块，因为条件是严格 `>`）
+- [x] gap 块仅在 `sinceLast > D` 时出现，且不计入燃烧率
+- [x] 活跃判定在 `now` 跨过 `end` 后立即变为非活跃
+- [x] 单条消息的窗口不 panic（`durationMin <= 0` 时返回 nil 而非除零）
+- [x] 未配置限额时不输出 pace/百分比
+- [x] 表格在 80 列终端下不溢出
 
 ---
 
@@ -248,11 +253,11 @@ devinmonitor snapshot --once --output json
 
 ### 2.7 验收标准
 
-- [ ] 退出码矩阵逐条可测：构造近限额/超额/无数据/无活跃窗口四种状态
-- [ ] 默认（不带 `--exit-code`）退出码行为**不变**（0/1）
-- [ ] JSON 中每个数值块都有 `source` + `confidence`
-- [ ] 注入 NaN / 1e18 / 3.0e9 的伪上游值，均被丢弃且不渲染
-- [ ] 超过 TTL 的上游数据自动降级并置 `stale: true`
+- [x] 退出码矩阵逐条可测：构造近限额/超额/无数据/无活跃窗口四种状态
+- [x] 默认（不带 `--exit-code`）退出码行为**不变**（0/1）
+- [x] JSON 中每个数值块都有 `source` + `confidence`
+- [x] 注入 NaN / 1e18 / 3.0e9 的伪上游值，均被丢弃且不渲染
+- [x] 超过 TTL 的上游数据自动降级并置 `stale: true`
 
 ---
 
@@ -292,10 +297,11 @@ devinmonitor snapshot --statusline        # 单行，适合 shell/tmux statuslin
 
 ### 3.3 验收标准
 
-- [ ] 并发跑 20 个 `--write-state`，读者永远能解析出完整 JSON（原子性验证）
-- [ ] 默认路径随 `DEVINMONITOR_CONFIG_DIR` 变化（保持可测试/沙箱友好）
-- [ ] 父目录不存在时自动创建
-- [ ] `--statusline` 输出严格单行、无 ANSI（除非显式要求颜色）、宽度可限
+- [x] 并发跑 20 个 `--write-state`，读者永远能解析出完整 JSON（原子性验证）
+- [x] 默认路径随 `DEVINMONITOR_CONFIG_DIR` 变化（保持可测试/沙箱友好）
+- [x] 父目录不存在时自动创建
+- [x] `--statusline` 输出严格单行、无 ANSI（除非显式要求颜色）
+- [ ] `--statusline` **宽度可限**（`--width N`）——尚未实现；当前输出宽度随会话标题变化
 
 ---
 
@@ -333,11 +339,11 @@ devinmonitor snapshot --statusline        # 单行，适合 shell/tmux statuslin
 
 ### 4.4 验收标准
 
-- [ ] `tools/list` 返回 8 个工具；`resources/list` 返回 4 个 resources
-- [ ] `resources/read` 对每个 URI 返回非空文本；未知 URI 返回规范错误
-- [ ] 标准 `Content-Length` 帧下全部可用（v0.3.0 已修复，需回归）
-- [ ] 通知仍不产生响应（回归）
-- [ ] 新增能力的 `initialize` 响应含 `resources` capability 与 `instructions`
+- [x] `tools/list` 返回 8 个工具；`resources/list` 返回 4 个 resources
+- [x] `resources/read` 对每个 URI 返回非空文本；未知 URI 返回规范错误
+- [x] 标准 `Content-Length` 帧下全部可用（v0.3.0 已修复，需回归）
+- [x] 通知仍不产生响应（回归）
+- [x] 新增能力的 `initialize` 响应含 `resources` capability 与 `instructions`
 
 ---
 
@@ -382,10 +388,10 @@ devinmonitor pricing schema                # 打印 JSON Schema 路径/内容
 
 ### 5.5 验收标准
 
-- [ ] 覆盖后 `models`/`daily` 等报表成本随之变化
-- [ ] 覆盖文件非法（负值/类型错）时 `pricing validate` 报错并给出位置
-- [ ] `$schema` 字段出现在写入的文件中
-- [ ] 无覆盖文件时行为与现状**完全一致**
+- [x] 覆盖后 `models`/`daily` 等报表成本随之变化
+- [x] 覆盖文件非法（负值/类型错）时 `pricing validate` 报错并给出位置
+- [x] `$schema` 字段出现在写入的文件中
+- [x] 无覆盖文件时行为与现状**完全一致**
 
 ---
 
@@ -462,11 +468,11 @@ devinmonitor errors --examples 3          # 每类附带 N 条样例
 
 ### 7.5 验收标准
 
-- [ ] 每个类别都有可复现的正则用例
-- [ ] 多条件类别（权限/`cd to` + `was blocked`）单条件时不误判
-- [ ] 错误率与 assistant 消息数口径一致，有单测
-- [ ] 脱敏后报告中不含任何本地绝对路径与会话 ID
-- [ ] 默认不联网（可通过静态检查或运行时断言保证）
+- [x] 每个类别都有可复现的正则用例
+- [x] 多条件类别（权限/`cd to` + `was blocked`）单条件时不误判
+- [x] 错误率与 assistant 消息数口径一致，有单测
+- [x] 脱敏后报告中不含任何本地绝对路径与会话 ID
+- [x] 默认不联网（可通过静态检查或运行时断言保证）
 
 ---
 
@@ -510,3 +516,33 @@ devinmonitor errors --examples 3          # 每类附带 N 条样例
 5. **退出码是接口**，但**必须 opt-in**，不能破坏既有脚本。
 6. **错误分类表顺序敏感**，首个命中即归类。
 7. **分享必须脱敏且绝不自动上传**（本地优先是我们的品牌承诺）。
+
+---
+
+## M6 — 后续需求（v0.4.4）
+
+在 M1–M5 全部交付后追加，来源是对同类工具的调研与自身使用的短板。
+
+- [x] **B1 `--last N`** —— `daily` / `weekly` / `monthly` 只看最近 N 期；`0` 表示全部。
+      `buildTimeBuckets` 按标签升序返回，因此「最近」是切片尾部——测试同时钉住了这一点，
+      以免实现反过来后报出看似合理的**最旧**数据。
+- [x] **B2 `--no-cost`** —— 全局持久参数，按注册的列头在 `ui.TableBuilder` 这一
+      唯一收口点过滤成本列，因此 8+ 处独立的表格构建代码无需逐一改动、也无从遗漏。
+      范围仅限**表格列**；面板/弹窗中的成本数字不受影响（已在 flag 说明中注明）。
+- [x] **B3 `docs/config.schema.json`** —— 由 `internal/config` 的 struct **逐字段**推导，
+      并核对注释与代码的多处不一致（主题枚举以 `internal/live/themes.go` 为准共 15 个、
+      货币以 `internal/budget/currency.go` 的 183 个 ISO 代码为准、`plan` 依注释）。
+      附 `config schema` 子命令打印地址与路径。
+- [x] **B4 `share --format html`** —— 自包含页面：内联 CSS、零 JavaScript、无外部引用，
+      断网可用；沿用既有脱敏不变量，并在页面上呈现脱敏清单供收件人审计。
+- [x] **B5 `subagent_heads`** —— v17 新增表，读取器已实现并做版本门控，`agents`
+      仅在**有数据时**追加 `Chain heads` 列。实测该表在所有已知数据库中均为空
+      （三种查法确认），因此该功能当前刻意保持惰性——已用新旧二进制逐字节比对证明
+      「真实数据上输出完全不变」。未对 `chain_node_id` 的语义做超出列名的断言。
+
+### M6 验收
+
+黑盒验收见 `M4/M5` 脚本的 M6 段：**107 项通过 / 0 失败**（其中 M6 新增 34 项），
+覆盖 `--last` 的尾部语义与边界值、`--no-cost` 的列增删、
+schema 的正/负用例（含 `ajv` 校验）、HTML 的自包含性与脱敏不变量、
+以及空表下 `agents` 输出不变。

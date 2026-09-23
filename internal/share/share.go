@@ -314,6 +314,15 @@ var cmdShare = func() *cobra.Command {
 			output, _ := cmd.Flags().GetString("output")
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
 			includeErrors, _ := cmd.Flags().GetBool("include-errors")
+			format, _ := cmd.Flags().GetString("format")
+
+			// A bad format is a usage error, checked before anything is read
+			// or written, so it fails the same way with --dry-run too.
+			if err := checkFormat(format); err != nil {
+				fmt.Fprintf(os.Stderr, "share: %v\n", err)
+				os.Exit(1)
+			}
+			format = normalizeFormat(format)
 
 			if dryRun {
 				// Nothing is scanned and nothing is written: the manifest is
@@ -344,11 +353,18 @@ var cmdShare = func() *cobra.Command {
 				out = f
 			}
 
-			enc := json.NewEncoder(out)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(rep); err != nil {
-				fmt.Fprintf(os.Stderr, "write report: %v\n", err)
-				os.Exit(1)
+			if format == FormatHTML {
+				if err := RenderHTML(out, rep); err != nil {
+					fmt.Fprintf(os.Stderr, "write report: %v\n", err)
+					os.Exit(1)
+				}
+			} else {
+				enc := json.NewEncoder(out)
+				enc.SetIndent("", "  ")
+				if err := enc.Encode(rep); err != nil {
+					fmt.Fprintf(os.Stderr, "write report: %v\n", err)
+					os.Exit(1)
+				}
 			}
 
 			// stderr, so a user redirecting stdout into a file still sees it.
@@ -358,6 +374,7 @@ var cmdShare = func() *cobra.Command {
 	c.Flags().String("output", "", i18n.T("help.shareOutput"))
 	c.Flags().Bool("dry-run", false, i18n.T("help.shareDryRun"))
 	c.Flags().Bool("include-errors", false, "Include error classification aggregates (never raw messages)")
+	c.Flags().String("format", FormatJSON, i18n.T("help.shareFormat"))
 	return c
 }
 

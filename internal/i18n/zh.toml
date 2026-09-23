@@ -292,6 +292,11 @@ pricingFetch = "下载价格目录并缓存，供离线使用"
 pricingSource = "目录地址（默认使用内置公共源）"
 pricingForce = "即使缓存仍新鲜也强制重新拉取"
 
+last = "仅显示最近 N 期（0 = 全部）"
+noCost = "隐藏成本列（便于截图与分享）"
+shareFormat = "输出格式：json（默认）或 html（自包含页面）"
+configSchema = "打印配置 JSON Schema 地址与本地路径"
+
 [block]
 statusActive = "活跃"
 statusDone   = "已完成"

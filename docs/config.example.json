@@ -1,0 +1,46 @@
+{
+  "$schema": "./config.schema.json",
+  "theme": "tokyo-night",
+  "locale": "zh",
+  "timeFormat": "24h",
+  "timezone": "Asia/Shanghai",
+  "abbreviateTokens": true,
+  "noEmoji": false,
+  "refreshInterval": 1000,
+  "refreshHz": 2.0,
+  "budgetDaily": 25.0,
+  "budgetWeekly": 120.0,
+  "budgetMonthly": 450.0,
+  "currency": "CNY",
+  "acuRate": 0.15,
+  "plan": "custom",
+  "planMonthly": 500.0,
+  "planACULimit": 500.0,
+  "pricingAutoFetch": false,
+  "resetHour": 9,
+  "notifyDesktop": true,
+  "notifyWebhook": "https://discord.com/api/webhooks/TOKEN",
+  "modelAliases": {
+    "devin-v2-5": "devin-v2",
+    "claude-sonnet-4.5": "claude-sonnet-4-5-20250929"
+  },
+  "customPricing": {
+    "devin-beta": {
+      "inputPerM": 2.5,
+      "outputPerM": 12.0,
+      "cacheReadPerM": 0.25,
+      "cacheWritePerM": 3.0
+    },
+    "internal-trial": {
+      "inputPerM": 0,
+      "outputPerM": 0,
+      "cacheReadPerM": 0,
+      "cacheWritePerM": 0
+    }
+  },
+  "savedFlags": {
+    "sessions.sort": "cost",
+    "view": "pane",
+    "alias:week": "report --period 7d --by model"
+  }
+}

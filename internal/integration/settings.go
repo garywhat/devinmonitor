@@ -21,11 +21,27 @@ import (
 // ---- Config Command (#78) ----
 
 var cmdConfig = func() *cobra.Command {
+	// configSchemaURL mirrors the $id of docs/config.schema.json, so the
+	// printed URL and the one written into a config file's "$schema" agree.
+	const configSchemaURL = "https://raw.githubusercontent.com/garywhat/devinmonitor/main/docs/config.schema.json"
+
 	c := &cobra.Command{
-		Use:   "config",
+		Use:   "config [show|set|reset|timezone|reset-hour|model-alias|schema]",
 		Short: i18n.T("cmd.config"),
+		Long: i18n.T("cmd.config") + "\n\n" +
+			"  show       " + i18n.T("cmd.configShow") + "\n" +
+			"  set <key> <value>\n" +
+			"  reset\n" +
+			"  timezone [show|set <tz>|auto]\n" +
+			"  reset-hour <hour>\n" +
+			"  model-alias [list|add <alias> <canonical>|remove <alias>]\n" +
+			"  schema     " + i18n.T("help.configSchema"),
 		// Default action when no subcommand: show config.
 		Run: func(cmd *cobra.Command, args []string) {
+			if len(args) > 0 {
+				fmt.Fprintf(os.Stderr, "unknown subcommand: %s (valid: show, set, reset, timezone, reset-hour, model-alias, schema)\n", args[0])
+				os.Exit(1)
+			}
 			showConfig(config.Global())
 		},
 	}
@@ -36,6 +52,21 @@ var cmdConfig = func() *cobra.Command {
 		Short: i18n.T("cmd.configShow"),
 		Run: func(cmd *cobra.Command, args []string) {
 			showConfig(config.Global())
+		},
+	})
+
+	// Subcommand: config schema
+	c.AddCommand(&cobra.Command{
+		Use:   "schema",
+		Short: i18n.T("help.configSchema"),
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("Schema URL: %s\n", configSchemaURL)
+			fmt.Printf("Config file: %s\n", config.Path())
+			// The schema may also be checked out next to the working
+			// directory; its absence is not an error.
+			if _, err := os.Stat("docs/config.schema.json"); err == nil {
+				fmt.Println("Local schema: docs/config.schema.json")
+			}
 		},
 	})
 

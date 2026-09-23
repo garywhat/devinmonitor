@@ -57,7 +57,8 @@ DevinMonitor 读取 Devin CLI 的本地会话数据库，提供实时监控、
 ### `daily` / `weekly` / `monthly` — 时间序列报表
 
 按日 / 周 / 月汇总 token、请求、子代理和成本，并列出所用模型。
-使用 `--breakdown` 可追加每模型子表。`weekly` 支持
+使用 `--breakdown` 可追加每模型子表，`--last N` 只看最近 N 期
+（`--last 0` 为默认值，表示全部）。`weekly` 支持
 `--start-day monday|sunday|...`。
 
 ![按日报表](docs/images/daily_zh.png)
@@ -119,6 +120,24 @@ devinmonitor export projects --format json
 格式：`csv`、`markdown`、`html`、`json`。报表类型或格式非法时以
 非零退出并给出用法提示。`--detailed` 仍会在 `sessions` 文档中内嵌
 逐请求明细。
+
+### `share` — 可安全发给别人的脱敏报表
+
+`share` 输出**仅含聚合数据**的报表：不含绝对路径（项目只取路径最后一段）、
+不含会话 ID、不含错误正文、不含消息内容。它会打印所应用的脱敏清单，
+`--dry-run` 可在写出任何文件之前预览将被移除的内容。
+
+```bash
+devinmonitor share --dry-run                      # 先审阅脱敏项
+devinmonitor share                                # JSON 输出到标准输出
+devinmonitor share --output report.json           # JSON 写入文件
+devinmonitor share --format html --output report.html
+devinmonitor share --include-errors               # 附上错误分类计数
+```
+
+`--format html` 生成**完全自包含**的页面：内联 CSS、无 JavaScript、不引用外部
+字体/图片/样式表，断网时从磁盘打开也能正常渲染。它携带与 JSON 相同的聚合数字
+外加脱敏清单，收件人可据此审计哪些内容被移除了。
 
 ## MCP 服务
 
@@ -230,7 +249,12 @@ devinmonitor mcp
 ```
 --data-dir string   Devin 数据目录（默认自动探测）
 --locale string     语言 en/zh（默认从系统探测）
+--no-cost           隐藏所有表格中的成本列（便于截图与分享）
 ```
+
+`--no-cost` 是持久参数，放在子命令前后都生效：
+`devinmonitor --no-cost sessions` 与 `devinmonitor sessions --no-cost` 等价。
+它移除的是**表格里的成本列与成本占比列**；面板与弹窗中打印的成本数字不受影响。
 
 ### 实时面板快捷键
 
@@ -310,6 +334,19 @@ Devin CLI 的 SQLite schema 是内部实现细节，可能随版本变化。
 免费模型（如 `glm-5-2`）在成本列显示 `free`。
 
 定价完全在本地解析，读取时**从不联网**。若将来引入远程价格源，它必须**写入** `pricing.json`，而不是在生成报表时被查询——这样工具离线可用，「无网络」不变式也得以保持。
+
+### `config.json` 的编辑器自动补全
+
+`devinmonitor config schema` 会打印 schema 地址、解析出的配置文件路径，以及
+仓库检出时本地的 `docs/config.schema.json`。把 `$schema` 键加进 `config.json`，
+编辑器即可自动补全并校验——包括主题枚举，因此未注册的配色会**在输入时就被拒绝**，
+而不是被静默忽略：
+
+```json
+{ "$schema": "https://raw.githubusercontent.com/garywhat/devinmonitor/main/docs/config.schema.json" }
+```
+
+该 schema 禁止未知键，因此拼错会立刻报错。`pricing.json` 有自己独立的 schema。
 
 ### 远程价格目录（需手动开启）
 

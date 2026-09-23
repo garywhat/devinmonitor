@@ -292,6 +292,11 @@ pricingFetch = "Download the price catalogue and cache it for offline use"
 pricingSource = "Catalogue URL (default: the built-in public source)"
 pricingForce = "Fetch even when the cache is still fresh"
 
+last = "Only the most recent N periods (0 = all)"
+noCost = "Hide cost columns (for screenshots and sharing)"
+shareFormat = "Output format: json (default) or html (self-contained page)"
+configSchema = "Print the config JSON Schema URL and the local path"
+
 [block]
 statusActive = "active"
 statusDone   = "done"

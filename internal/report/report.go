@@ -210,10 +210,66 @@ type AgentStats struct {
 	AvgOutputLen int
 	MaxOutputLen int
 	SessionIDs   map[string]bool
+
+	// ChainHeads and ChainHeadNodes surface the v17 `subagent_heads` table,
+	// which records (session_id, agent_id, chain_node_id, updated_at) — one row
+	// per subagent, with a node id and nothing we can interpret beyond the
+	// column name.
+	//
+	// ChainHeads is the number of recorded head rows in the sessions attributed
+	// to this profile; ChainHeadNodes are their chain_node_id values, in the
+	// session/agent order they were read. Both are zero when the database has
+	// no head rows, which is the case on every database observed so far, so on
+	// current data nothing downstream changes.
+	//
+	// The table has no profile column, so heads are attributed at session
+	// granularity using the same most-active-profile rule already used for
+	// ReadCalls below. Counts are therefore exact per session and approximate
+	// per profile; see BuildAgentStatsWithHeads.
+	ChainHeads     int
+	ChainHeadNodes []int
+}
+
+// AgentChainHead is one recorded subagent chain head, as read from the v17
+// `subagent_heads` table by internal/reader (reader.SubagentHead).
+//
+// SessionID is supplied by the map key in BuildAgentStatsWithHeads, so it is
+// not repeated here. Nothing in this type interprets ChainNodeID beyond its
+// column name: it is the node the subagent's chain currently heads at.
+type AgentChainHead struct {
+	AgentID     string
+	ChainNodeID int
 }
 
 // BuildAgentStats aggregates subagent usage across all sessions, grouped by profile.
+//
+// It carries no chain-head data, which is what every caller but one wants:
+// internal/export renders the same rows without a place for the optional v17
+// column. Passing no heads yields exactly the output this function produced
+// before chain heads existed, field for field.
 func BuildAgentStats(ss []model.Session) []AgentStats {
+	return BuildAgentStatsWithHeads(ss, nil)
+}
+
+// BuildAgentStatsWithHeads is BuildAgentStats plus the v17 `subagent_heads`
+// records, keyed by session ID. A nil or empty map means "no heads recorded"
+// and reproduces BuildAgentStats exactly — no existing field changes, only the
+// ChainHeads/ChainHeadNodes fields get values, and only when heads are passed.
+//
+// Attribution, stated plainly because the table does not make it for us:
+// subagent_heads records (session_id, agent_id) with NO profile column, while
+// these rows are grouped by profile. So each session's heads are credited to
+// the profile that dominated that session's run_subagent calls — the same rule
+// the read_subagent block below already applies, and the only rule that keeps
+// every head counted exactly once. Consequences, both deliberate:
+//
+//   - A profile's count is exact when its sessions are exclusive to it and
+//     approximate when a session used several profiles; the TOTAL row is exact.
+//   - A session whose heads exist but from which no run_subagent call was
+//     parsed has no dominant profile and contributes no heads anywhere. That
+//     needs a session with heads and no subagent call, which cannot happen if
+//     parsing sees the call.
+func BuildAgentStatsWithHeads(ss []model.Session, headsBySession map[string][]AgentChainHead) []AgentStats {
 	byProfile := map[string]*AgentStats{}
 	for _, s := range ss {
 		for _, sa := range s.SubAgentCalls {
@@ -301,6 +357,45 @@ func BuildAgentStats(ss []model.Session) []AgentStats {
 			byProfile[domProf].ReadCalls += s.ReadSubAgentCalls
 		}
 	}
+	// Credit recorded chain heads to each session's dominant profile, per the
+	// rule documented on BuildAgentStatsWithHeads.
+	//
+	// Ties are broken by profile name rather than by map iteration order. The
+	// read_subagent block above leaves ties to the map (so a tie is
+	// nondeterministic there), but it is deliberately left untouched: making it
+	// deterministic would change an existing value in tie cases, which this
+	// change is not allowed to do. Nothing here reuses that loop's result, so
+	// the two rules cannot disagree on anything but the choice of tie winner.
+	for _, s := range ss {
+		heads := headsBySession[s.ID]
+		if len(heads) == 0 {
+			continue
+		}
+		profCalls := map[string]int{}
+		for _, sa := range s.SubAgentCalls {
+			prof := sa.Profile
+			if prof == "" {
+				prof = "unknown"
+			}
+			profCalls[prof]++
+		}
+		var domProf string
+		var domCount int
+		for p, c := range profCalls {
+			if c > domCount || (c == domCount && p < domProf) {
+				domCount = c
+				domProf = p
+			}
+		}
+		st := byProfile[domProf]
+		if st == nil {
+			continue
+		}
+		st.ChainHeads += len(heads)
+		for _, h := range heads {
+			st.ChainHeadNodes = append(st.ChainHeadNodes, h.ChainNodeID)
+		}
+	}
 	// Compute averages.
 	for _, st := range byProfile {
 		if len(st.Durations) > 0 {
@@ -342,6 +437,22 @@ func BuildAgentStats(ss []model.Session) []AgentStats {
 		return rows[i].Calls > rows[j].Calls
 	})
 	return rows
+}
+
+// HasChainHeads reports whether any row carries a recorded chain head.
+//
+// This is the gate for the optional "Chain heads" column: on a database where
+// Devin is not writing subagent_heads — every database observed so far — it is
+// false and the column is omitted entirely, so a user never sees a column that
+// can never be populated and the report does not imply that Devin tracks
+// subagent chains when it does not.
+func HasChainHeads(stats []AgentStats) bool {
+	for _, st := range stats {
+		if st.ChainHeads > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- Models report ----
