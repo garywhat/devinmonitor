@@ -42,6 +42,11 @@ type ExtModel struct {
 	reader   extReader
 	interval time.Duration
 
+	// saveErr records that a settings write did not reach disk. The dashboard
+	// keeps running with the in-memory value, so the status bar has to say that
+	// the change will not survive a restart.
+	saveErr string
+
 	// Overlay state.
 	showHelp           bool
 	showSettings       bool
@@ -257,7 +262,11 @@ func (m ExtModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				cfg.SavedFlags["view"] = "list"
 			}
-			_ = config.SaveGlobal()
+			if err := config.SaveGlobal(); err != nil {
+				m.saveErr = "view preference not saved: " + err.Error()
+			} else {
+				m.saveErr = ""
+			}
 			return m, nil
 		case "t":
 			m.timeWindow = (m.timeWindow + 1) % 4
@@ -374,6 +383,9 @@ func (m ExtModel) renderStatusBar() string {
 	}
 	if m.logTailing {
 		parts = append(parts, "log")
+	}
+	if m.saveErr != "" {
+		parts = append(parts, valueStyle.Render(m.saveErr))
 	}
 	parts = append(parts, "? help  s settings  Ctrl+P palette  | split  v view  t time  l log  m models  Enter detail  q quit")
 	return dimStyle.Render(strings.Join(parts, "  ·  "))
@@ -650,8 +662,9 @@ func (m ExtModel) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "q":
 		m.showSettings = false
-		// Save settings.
-		m.saveSettings()
+		// Save settings. The result must be assigned: saveSettings is a value
+		// receiver, so discarding it would drop the recorded failure.
+		m = m.saveSettings()
 	case "up", "k":
 		if m.settingsCursor > 0 {
 			m.settingsCursor--
@@ -695,7 +708,7 @@ func (m ExtModel) cycleSetting(dir int) {
 	}
 }
 
-func (m ExtModel) saveSettings() {
+func (m ExtModel) saveSettings() ExtModel {
 	cfg := config.Global()
 	for _, f := range m.settingsFields {
 		switch f.Key {
@@ -730,8 +743,13 @@ func (m ExtModel) saveSettings() {
 			cfg.BudgetMonthly = v
 		}
 	}
-	_ = config.SaveGlobal()
+	if err := config.SaveGlobal(); err != nil {
+		m.saveErr = "settings not saved: " + err.Error()
+	} else {
+		m.saveErr = ""
+	}
 	ApplyGlobalTheme()
+	return m
 }
 
 // RenderSettingsPanel renders the interactive settings panel.

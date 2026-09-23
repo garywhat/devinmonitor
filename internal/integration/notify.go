@@ -16,7 +16,6 @@ import (
 	"github.com/garywhat/devinmonitor/internal/config"
 	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
-	"github.com/garywhat/devinmonitor/internal/report"
 )
 
 // ---- Webhook Notifications (#85) ----
@@ -258,42 +257,6 @@ var cmdNotify = func() *cobra.Command {
 	}
 	c.Flags().BoolVar(&test, "test", false, "send a test notification")
 	return c
-}
-
-// checkAndNotify is a helper that checks for budget/session alerts and sends
-// notifications if configured. Used by the web dashboard poller.
-func checkAndNotify(ss []model.Session) {
-	cfg := config.Global()
-	alerts := detectAlerts(ss)
-	if len(alerts) == 0 {
-		return
-	}
-	for _, a := range alerts {
-		n := model.Notification{Title: a.Kind, Body: a.Message, Level: a.Severity}
-		if cfg.NotifyDesktop {
-			_ = sendDesktopNotification(n)
-		}
-		if cfg.NotifyWebhook != "" {
-			_ = sendWebhook(cfg.NotifyWebhook, n)
-		}
-	}
-}
-
-// triggerSessionCompleteNotify sends a notification when a session completes.
-func triggerSessionCompleteNotify(s *model.Session) {
-	cfg := config.Global()
-	cost, _ := report.SessionCost(s)
-	n := model.Notification{
-		Title: "Session Complete",
-		Body:  fmt.Sprintf("Session %s completed. Cost: $%.2f", s.ID, cost),
-		Level: "info",
-	}
-	if cfg.NotifyDesktop {
-		_ = sendDesktopNotification(n)
-	}
-	if cfg.NotifyWebhook != "" {
-		_ = sendWebhook(cfg.NotifyWebhook, n)
-	}
 }
 
 // Ensure time is used (for potential future timestamp logic).

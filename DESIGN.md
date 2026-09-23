@@ -275,11 +275,19 @@ since been fixed are kept with their resolution so the reasoning is not lost.
    the message; `model.Message` carries none, so precision is chosen over recall
    deliberately. Localized (non-English) error text is only partly covered.
 
-6. **`MaxSupportedSchema` used to be 999**, making `ErrSchemaUnsupported`
-   unreachable while the real database ships schema version 16. **Fixed:** the
-   ceiling is now the version actually validated, a higher version fails loudly
-   with an actionable message, and `DEVINMONITOR_ALLOW_UNKNOWN_SCHEMA=1` is the
-   documented escape hatch.
+6. ~~**`MaxSupportedSchema` used to be 999**~~, making `ErrSchemaUnsupported`
+   unreachable while the real database already shipped version 16. **Fixed and
+   then immediately vindicated:** the ceiling became the version actually
+   validated, and Devin shipped **version 17** while this release was being
+   prepared. Instead of quietly misreading it under the old constant, the tool
+   refused with an actionable message. v17 turned out to be **additive** — it
+   adds a `subagent_heads` table and leaves every column we read intact (checked
+   column by column against `sessions` and `message_nodes`) — so the ceiling
+   moved to 17 rather than the guard being relaxed.
+   Detection is exact but a compatible bump still needs a release; the
+   `DEVINMONITOR_ALLOW_UNKNOWN_SCHEMA` escape hatch is what covers the gap, and
+   `subagent_heads` is not read yet.
+
 7. **Remote pricing is implemented, as a write-through cache only.**
    `pricing fetch` (plus an opt-in `pricingAutoFetch`) downloads a public model
    catalogue into `<config dir>/pricing.cache.json`. Three boundaries keep the

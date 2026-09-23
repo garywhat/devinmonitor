@@ -197,12 +197,12 @@ var cmdConfigTimezoneSub = func() *cobra.Command {
 					os.Exit(1)
 				}
 				cfg.Timezone = args[1]
-				_ = config.SaveGlobal()
+				saveConfig()
 				fmt.Printf("Timezone set to: %s\n", args[1])
 			case "auto":
 				tz := detectTimezone()
 				cfg.Timezone = tz
-				_ = config.SaveGlobal()
+				saveConfig()
 				fmt.Printf("Auto-detected timezone: %s\n", tz)
 			default:
 				fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n", args[0])
@@ -289,7 +289,7 @@ var cmdModelAliasSub = func() *cobra.Command {
 					cfg.ModelAliases = map[string]string{}
 				}
 				cfg.ModelAliases[args[1]] = args[2]
-				_ = config.SaveGlobal()
+				saveConfig()
 				fmt.Printf("Model alias added: %s -> %s\n", args[1], args[2])
 			case "remove":
 				if len(args) < 2 {
@@ -297,7 +297,7 @@ var cmdModelAliasSub = func() *cobra.Command {
 					os.Exit(1)
 				}
 				delete(cfg.ModelAliases, args[1])
-				_ = config.SaveGlobal()
+				saveConfig()
 				fmt.Printf("Model alias removed: %s\n", args[1])
 			default:
 				fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n", args[0])
@@ -508,7 +508,7 @@ var cmdPricing = func() *cobra.Command {
 				if cfg != nil && cfg.CustomPricing != nil {
 					if _, ok := cfg.CustomPricing[m]; ok {
 						delete(cfg.CustomPricing, m)
-						_ = config.SaveGlobal()
+						saveConfig()
 						fmt.Printf("Custom pricing removed for %s (source: config)\n", m)
 						break
 					}

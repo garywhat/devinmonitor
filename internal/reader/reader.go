@@ -6,7 +6,6 @@
 package reader
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,19 +16,24 @@ import (
 )
 
 // MaxSupportedSchema is the highest refinery schema version this build has been
-// validated against. The real database ships a version row (observed: 16), so
-// this is a real ceiling rather than a formality.
+// validated against.
 //
 // It used to be 999 with a comment claiming the schema had no version row,
 // which made ErrSchemaUnsupported unreachable: a future schema could drop or
-// rename a column and we would silently parse it as if it were v16, reporting
-// wrong numbers. For a monitoring tool a loud failure beats a plausible wrong
-// figure, so the ceiling is the version we have actually exercised.
+// rename a column and we would silently parse it as if it were supported,
+// reporting wrong numbers. For a monitoring tool a loud failure beats a
+// plausible wrong figure, so the ceiling is the version actually exercised.
 //
-// A schema bump that is in fact compatible can still be forced through with
+// That guard then earned its keep immediately: Devin shipped version 17 while
+// this was being developed, and instead of quietly misreading it the tool said
+// so. v17 turned out to be additive — a new `subagent_heads` table, with every
+// column we read intact — so the ceiling moved to 17 rather than the guard being
+// relaxed.
+//
+// A bump that is in fact compatible can still be forced through with
 // DEVINMONITOR_ALLOW_UNKNOWN_SCHEMA=1, which is far easier to explain to a user
 // than silently wrong data.
-const MaxSupportedSchema = 16
+const MaxSupportedSchema = 17
 
 // allowUnknownSchema reports whether the escape hatch is set.
 func allowUnknownSchema() bool {
@@ -158,15 +162,4 @@ func DetectSchemaVersion(dbPath string) (int, error) {
 	}
 	defer r.Close()
 	return r.SchemaVersion(), nil
-}
-
-// IsTTY reports whether the given fd is a terminal.
-func IsTTY(fd uintptr) bool {
-	info, err := os.Stat("/dev/stdin")
-	if err == nil && (info.Mode()&os.ModeCharDevice) != 0 {
-		return true
-	}
-	// Fallback: check if stdin is a char device via Stat on fd.
-	_ = errors.New
-	return false
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/garywhat/devinmonitor/internal/cli"
+	"github.com/garywhat/devinmonitor/internal/config"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/reader"
 	"github.com/garywhat/devinmonitor/internal/report"
@@ -42,6 +43,19 @@ func provenanceLabel(creditCost, acuCost float64) string {
 		return "official"
 	}
 	return "estimated"
+}
+
+// saveConfig persists the global config, or fails loudly.
+//
+// A command whose entire purpose is to store a preference must not print
+// "set" and exit 0 when the write did not happen: the user would believe a
+// setting took effect that will be gone as soon as the process exits. Several
+// call sites used to discard the error.
+func saveConfig() {
+	if err := config.SaveGlobal(); err != nil {
+		fmt.Fprintf(os.Stderr, "save config: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 // watchLoop re-runs fn every interval until the process is interrupted.

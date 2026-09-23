@@ -127,7 +127,7 @@ var cmdAlias = func() *cobra.Command {
 				}
 				if cfg.SavedFlags != nil {
 					delete(cfg.SavedFlags, "alias:"+args[1])
-					_ = config.SaveGlobal()
+					saveConfig()
 				}
 				fmt.Printf("Alias removed: %s\n", args[1])
 			default:
@@ -162,7 +162,7 @@ var cmdSessionsEnhanced = func() *cobra.Command {
 					cfg.SavedFlags = map[string]string{}
 				}
 				cfg.SavedFlags["sessions.sort"] = sortKey
-				_ = config.SaveGlobal()
+				saveConfig()
 				fmt.Fprintf(os.Stderr, "Saved default sort: %s\n", sortKey)
 			}
 
