@@ -7,6 +7,7 @@ package integration
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/reader"
 	"github.com/garywhat/devinmonitor/internal/report"
+	"github.com/garywhat/devinmonitor/internal/ui"
 )
 
 // openReader opens a reader using the --data-dir persistent flag from cmd.
@@ -60,9 +62,27 @@ func saveConfig() {
 
 // watchLoop re-runs fn every interval until the process is interrupted.
 // It clears the screen between renders for a live-updating effect.
+// clearScreenForRefresh writes the clear-and-home sequence only for a terminal.
+//
+// The sequence is not cosmetic: written to a pipe or a file it is inert garbage,
+// and it made `sessions --watch > out` begin with two escape sequences nobody
+// asked for. Note this is a TTY question, not a colour question -- a terminal
+// running with NO_COLOR still wants its screen cleared between refreshes, and a
+// pipe never wants either -- which is why it consults StdoutIsTTY rather than
+// ColorEnabled.
+//
+// The predicate is a parameter rather than a call inside so the decision can be
+// tested without a terminal: watchLoop itself never returns.
+func clearScreenForRefresh(w io.Writer, isTTY bool) {
+	if !isTTY {
+		return
+	}
+	fmt.Fprint(w, "\033[2J\033[H") // clear screen + home cursor
+}
+
 func watchLoop(interval time.Duration, fn func() error) {
 	for {
-		fmt.Print("\033[2J\033[H") // clear screen + home cursor
+		clearScreenForRefresh(os.Stdout, ui.StdoutIsTTY())
 		if err := fn(); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		}

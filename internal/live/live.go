@@ -1272,10 +1272,21 @@ func (m model_) panel(title, content string, width int) string {
 	for _, line := range strings.Split(content, "\n") {
 		lines = append(lines, ui.Truncate(line, innerW))
 	}
-	// Build panel with manual border coloring (lipgloss strips ANSI from
-	// pure-symbol strings when output is not a TTY).
-	bc := "\x1b[38;5;238m"
-	rst := "\x1b[0m"
+	// Build panel with manual border coloring.
+	//
+	// The escapes are written by hand because lipgloss strips ANSI from a
+	// pure-symbol string when stdout is not a TTY and the border would lose its
+	// colour. That workaround is exactly why this used to leak escapes into a
+	// pipe: emitting unconditionally defeated the shared colour decision, so
+	// `live --once | cat` carried 28 escape sequences and NO_COLOR had no
+	// effect on them. Asking the same choke point the rest of the tool asks
+	// means the layout is identical either way -- with colour off there is
+	// simply nothing for lipgloss to strip.
+	bc, rst := "", ""
+	if ui.ColorEnabled() {
+		bc = "\x1b[38;5;238m"
+		rst = "\x1b[0m"
+	}
 	horiz := strings.Repeat("─", innerW+2)
 	top := bc + "╭" + horiz + "╮" + rst
 	bot := bc + "╰" + horiz + "╯" + rst

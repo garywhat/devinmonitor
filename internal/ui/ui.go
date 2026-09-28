@@ -119,6 +119,17 @@ func stdoutIsTTY() bool {
 	return term.IsTerminal(int(os.Stdout.Fd()))
 }
 
+// StdoutIsTTY reports whether stdout is an interactive terminal.
+//
+// This is deliberately NOT the same question as ColorEnabled. Clearing the
+// screen requires a terminal; colouring requires permission. A terminal running
+// with NO_COLOR still wants its screen cleared between refreshes, and a pipe
+// never wants either, so a caller that conflates them gets one of the two
+// wrong.
+func StdoutIsTTY() bool {
+	return stdoutIsTTY()
+}
+
 // colorEnabledFor is the pure decision behind ColorEnabled: mode, terminal
 // status and environment in, yes/no out. Kept separate so the rules can be
 // tested without a terminal or a registry of global state.
