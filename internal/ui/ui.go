@@ -44,6 +44,112 @@ func terminalWidth() int {
 	return 200
 }
 
+// ---- color capability: the one place ANSI output is decided ----
+//
+// Every escape sequence this package emits is gated by ColorEnabled, and this
+// package is where every table and panel in the CLI is rendered. That is what
+// makes it a single choke point: a new command that builds a ui.NewTable gets
+// pipe-safe, NO_COLOR-aware output without doing anything, instead of having to
+// remember a per-command check.
+//
+// The rules mirror lipgloss/termenv (which already degrade on a non-TTY) so
+// that a chart from internal/trends and a table from here agree on the same
+// command line: both go plain under `| cat`, both honour NO_COLOR, and both
+// come back with CLICOLOR_FORCE=1.
+const (
+	// ColorAuto decides from the environment and whether stdout is a terminal.
+	ColorAuto = "auto"
+	// ColorAlways forces ANSI even on a pipe. An explicit mode wins over
+	// NO_COLOR, matching the `--color=always` convention.
+	ColorAlways = "always"
+	// ColorNever suppresses ANSI even on a terminal.
+	ColorNever = "never"
+)
+
+var (
+	colorModeMu sync.RWMutex
+	colorMode   = ColorAuto
+)
+
+// SetColorMode overrides automatic color detection for this process. It is the
+// programmatic form of the DEVINMONITOR_COLOR environment variable; an unknown
+// value falls back to ColorAuto.
+func SetColorMode(mode string) {
+	switch m := strings.ToLower(strings.TrimSpace(mode)); m {
+	case ColorAlways, ColorNever:
+		colorModeMu.Lock()
+		colorMode = m
+		colorModeMu.Unlock()
+	default:
+		colorModeMu.Lock()
+		colorMode = ColorAuto
+		colorModeMu.Unlock()
+	}
+}
+
+// ColorMode returns the current mode (ColorAuto unless SetColorMode changed it).
+func ColorMode() string {
+	colorModeMu.RLock()
+	defer colorModeMu.RUnlock()
+	return colorMode
+}
+
+// ColorEnabled reports whether ANSI styling may be written to stdout.
+//
+// stdout, not the writer a caller may eventually use, is the right thing to
+// test: every CLI command renders through fmt.Print* to stdout, and a command
+// that writes a table to a file (export) does not use this package's renderers.
+func ColorEnabled() bool {
+	mode := ColorMode()
+	// DEVINMONITOR_COLOR is the shell-level override; an explicit
+	// SetColorMode wins over it.
+	if mode == ColorAuto {
+		switch strings.ToLower(strings.TrimSpace(os.Getenv("DEVINMONITOR_COLOR"))) {
+		case ColorAlways:
+			mode = ColorAlways
+		case ColorNever:
+			mode = ColorNever
+		}
+	}
+	return colorEnabledFor(mode, stdoutIsTTY(), os.Getenv)
+}
+
+// stdoutIsTTY reports whether stdout is a terminal.
+func stdoutIsTTY() bool {
+	return term.IsTerminal(int(os.Stdout.Fd()))
+}
+
+// colorEnabledFor is the pure decision behind ColorEnabled: mode, terminal
+// status and environment in, yes/no out. Kept separate so the rules can be
+// tested without a terminal or a registry of global state.
+func colorEnabledFor(mode string, isTTY bool, getenv func(string) string) bool {
+	switch mode {
+	case ColorAlways:
+		return true
+	case ColorNever:
+		return false
+	}
+	// NO_COLOR (https://no-color.org) wins over the CLICOLOR variables.
+	if getenv("NO_COLOR") != "" {
+		return false
+	}
+	// CLICOLOR_FORCE=1 asks for color even when stdout is not a terminal.
+	if forced := getenv("CLICOLOR_FORCE"); forced != "" && forced != "0" {
+		return true
+	}
+	if getenv("CLICOLOR") == "0" {
+		return false
+	}
+	if !isTTY {
+		return false
+	}
+	// A dumb terminal cannot render the sequences, so it never gets them.
+	if strings.EqualFold(strings.TrimSpace(getenv("TERM")), "dumb") {
+		return false
+	}
+	return true
+}
+
 // Color palette (dark theme).
 var (
 	ColorPrimary = lipgloss.Color("39")
@@ -473,9 +579,20 @@ func (t *TableBuilder) render() string {
 	midBorder := buildHoriz(teeRight, cross, teeLeft)
 	botBorder := buildHoriz(botLeft, teeUp, botRight)
 
-	// Build a row line.
-	borderColor := "\x1b[38;5;238m"
-	borderReset := "\x1b[0m"
+	// Build a row line. When color is off every style string stays empty, so
+	// the table is plain text with the same layout — the decision is made once,
+	// here, rather than at each of the ~14 call sites that build tables.
+	color := ColorEnabled()
+	borderColor := ""
+	borderReset := ""
+	headerStyle := ""
+	totalStyle := ""
+	if color {
+		borderColor = "\x1b[38;5;238m"
+		borderReset = "\x1b[0m"
+		headerStyle = "\x1b[1;38;5;99m" // bold purple
+		totalStyle = "\x1b[1m"          // bold
+	}
 	borderVert := borderColor + vert + borderReset
 	buildRow := func(cells []string, style string) string {
 		var b strings.Builder
@@ -508,7 +625,7 @@ func (t *TableBuilder) render() string {
 
 	out.WriteString(borderColor + topBorder + borderReset)
 	out.WriteString("\n")
-	out.WriteString(buildRow(t.headers, "\x1b[1;38;5;99m")) // header: bold purple
+	out.WriteString(buildRow(t.headers, headerStyle))
 	out.WriteString("\n")
 	out.WriteString(borderColor + midBorder + borderReset)
 	out.WriteString("\n")
@@ -520,7 +637,7 @@ func (t *TableBuilder) render() string {
 	if t.totalRow != nil {
 		out.WriteString(borderColor + midBorder + borderReset)
 		out.WriteString("\n")
-		out.WriteString(buildRow(t.totalRow, "\x1b[1m")) // bold
+		out.WriteString(buildRow(t.totalRow, totalStyle))
 		out.WriteString("\n")
 	}
 	out.WriteString(borderColor + botBorder + borderReset)
@@ -540,9 +657,14 @@ func Truncate(s string, maxDisplayWidth int) string {
 
 // Panel renders a titled bordered panel with the given content.
 // Borders are colored manually because lipgloss strips ANSI from pure-symbol
-// strings when output is not a TTY.
+// strings when output is not a TTY. Like the table renderer, the panel goes
+// plain whenever ColorEnabled is false, so a piped panel carries no escapes.
 func Panel(title, content string, width int) string {
-	t := lipgloss.NewStyle().Bold(true).Foreground(ColorHeader).Render(title)
+	color := ColorEnabled()
+	t := title
+	if color {
+		t = lipgloss.NewStyle().Bold(true).Foreground(ColorHeader).Render(title)
+	}
 	innerW := width - 4 // width - 2 borders - 2 padding
 	body := content
 	if innerW > 0 {
@@ -554,8 +676,12 @@ func Panel(title, content string, width int) string {
 		body = strings.Join(lines, "\n")
 	}
 	// Build panel with manual border coloring.
-	bc := "\x1b[38;5;238m"
-	rst := "\x1b[0m"
+	bc := ""
+	rst := ""
+	if color {
+		bc = "\x1b[38;5;238m"
+		rst = "\x1b[0m"
+	}
 	horiz := strings.Repeat("─", innerW+2) // +2 for padding
 	top := bc + "╭" + horiz + "╮" + rst
 	bot := bc + "╰" + horiz + "╯" + rst

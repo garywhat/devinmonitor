@@ -501,7 +501,7 @@ func TestRenderCompact(t *testing.T) {
 		s := base
 		s.Limits = nil
 		got := RenderCompact(s)
-		want := "devinmonitor ok · today $1.23 · 19 sess · 29249 req"
+		want := "devinmonitor ok · today $1.23 [no basis] · 19 sess · 29249 req"
 		if got != want {
 			t.Fatalf("RenderCompact = %q, want %q", got, want)
 		}
@@ -522,7 +522,7 @@ func TestRenderCompact(t *testing.T) {
 			},
 		}
 		got := RenderCompact(s)
-		want := "devinmonitor near_limit · today $1.23 · 19 sess · 29249 req · 5h 42% on track (resets " +
+		want := "devinmonitor near_limit · today $1.23 [no basis] · 19 sess · 29249 req · 5h 42% on track (resets " +
 			reset.Format("15:04") + ")"
 		if got != want {
 			t.Fatalf("RenderCompact = %q, want %q", got, want)
@@ -540,7 +540,7 @@ func TestRenderCompact(t *testing.T) {
 			},
 		}
 		got := RenderCompact(s)
-		want := "devinmonitor ok · today $1.23 · 19 sess · 29249 req · custom_bucket 42.5% (resets 23:05)"
+		want := "devinmonitor ok · today $1.23 [no basis] · 19 sess · 29249 req · custom_bucket 42.5% (resets 23:05)"
 		if got != want {
 			t.Fatalf("RenderCompact = %q, want %q", got, want)
 		}

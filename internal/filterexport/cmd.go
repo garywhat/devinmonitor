@@ -286,9 +286,12 @@ func cmdStatus() *cobra.Command {
 			case setTitle:
 				export.SetTerminalTitle(os.Stdout, export.FormatTitle(snap, titleFmt))
 			case compact:
+				// --compact picks the one-line form; the default is the
+				// multi-line block. These used to call the same function, which
+				// made the flag a no-op.
 				fmt.Println(export.CompactStatus(snap))
 			default:
-				fmt.Println(export.CompactStatus(snap))
+				fmt.Println(export.FullStatus(snap))
 			}
 		},
 	}

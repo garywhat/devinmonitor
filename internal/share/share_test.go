@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/garywhat/devinmonitor/internal/model"
+	"github.com/garywhat/devinmonitor/internal/status"
 )
 
 // Fixture values. The IDs and full paths must never survive into a report; the
@@ -145,8 +146,15 @@ func TestBuildOmitsSessionIDsAndAbsolutePaths(t *testing.T) {
 	if rep.Usage.TotalRequests != 5 {
 		t.Errorf("TotalRequests = %d, want 5", rep.Usage.TotalRequests)
 	}
-	if rep.Usage.TotalTokens != 4800 {
-		t.Errorf("TotalTokens = %d, want 4800", rep.Usage.TotalTokens)
+	// totalTokens is cache-inclusive (session 1 carries 300 cache-read tokens
+	// on top of 1800 input+output); nonCacheTokens is the input+output figure
+	// that used to be published as totalTokens. Both are asserted so neither
+	// can silently change meaning again.
+	if rep.Usage.TotalTokens != 5100 {
+		t.Errorf("TotalTokens = %d, want 5100 (cache-inclusive)", rep.Usage.TotalTokens)
+	}
+	if rep.Usage.NonCacheTokens != 4800 {
+		t.Errorf("NonCacheTokens = %d, want 4800 (input+output)", rep.Usage.NonCacheTokens)
 	}
 	if len(rep.Usage.ByProject) != 1 || rep.Usage.ByProject[0].Project != "secret-project" {
 		t.Fatalf("ByProject = %+v, want one %q entry", rep.Usage.ByProject, "secret-project")
@@ -219,6 +227,102 @@ func TestCostProvenance(t *testing.T) {
 }
 
 // ---- Manifest ----
+
+// TestCostBasis pins the second, orthogonal dimension: WHAT the report's cost is
+// measured with, as opposed to TestCostProvenance's HOW TRUSTWORTHY it is.
+//
+// The last two cases are the interesting ones. A free or unpriced model carries
+// no usable provenance ("unknown") but its figure still came out of our token ×
+// price arithmetic, so its basis is token_estimate — the two dimensions
+// answering differently is the design, not an inconsistency.
+func TestCostBasis(t *testing.T) {
+	acu := string(status.CostBasisACU)
+	token := string(status.CostBasisTokenEstimate)
+	mixed := string(status.CostBasisMixed)
+	unavailable := string(status.CostBasisUnavailable)
+
+	cases := []struct {
+		name string
+		ss   []model.Session
+		want string
+	}{
+		{"only ACU-billed sessions", []model.Session{
+			{ID: fixtureID1, WorkingDir: fixtureUnix, Model: "claude-sonnet-4-5", CreditCost: 2, AssistantCount: 1},
+			{ID: fixtureID2, WorkingDir: fixtureWin, Model: "claude-sonnet-4-5", ACUCost: 3, AssistantCount: 1},
+		}, acu},
+		{"only token estimates", []model.Session{
+			{ID: fixtureID1, WorkingDir: fixtureUnix, Model: "claude-sonnet-4-5", InputTokens: 1000, OutputTokens: 100, AssistantCount: 1},
+		}, token},
+		{"ACU and token estimates in one report", fixtureSessions(), mixed},
+		{"nothing to classify", nil, unavailable},
+		{"a session with no cost and no tokens", []model.Session{
+			{ID: fixtureID1, WorkingDir: fixtureUnix, Model: "claude-sonnet-4-5", AssistantCount: 1},
+		}, unavailable},
+		{"a free model still has a token basis", []model.Session{
+			{ID: fixtureID1, WorkingDir: fixtureUnix, Model: "glm-5-2", InputTokens: 1000, AssistantCount: 1},
+		}, token},
+		{"an unpriced model still has a token basis", []model.Session{
+			{ID: fixtureID1, WorkingDir: fixtureUnix, Model: "no-such-model-anywhere", InputTokens: 1000, AssistantCount: 1},
+		}, token},
+	}
+	allowed := map[string]bool{acu: true, token: true, mixed: true, unavailable: true}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Build(tc.ss, false, time.Now()).Usage.CostBasis
+			if !allowed[got] {
+				t.Fatalf("CostBasis = %q, not one of acu|token_estimate|mixed|unavailable", got)
+			}
+			if got != tc.want {
+				t.Errorf("CostBasis = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestCostBasisIsPerRowAndInTheJSON: a model table is where a reader ranks models
+// against one another, so the label has to be on the row; and the basis must be
+// present in the serialised report, not only in the Go struct.
+func TestCostBasisIsPerRowAndInTheJSON(t *testing.T) {
+	rep := Build(fixtureSessions(), false, time.Now())
+
+	// fixtureSessions: one credit-billed session and one token-only session, on
+	// the same model and in the same project, so every aggregate below is mixed.
+	if got := rep.Usage.CostBasis; got != string(status.CostBasisMixed) {
+		t.Errorf("usage.CostBasis = %q, want mixed", got)
+	}
+	if len(rep.Usage.ByModel) != 1 {
+		t.Fatalf("ByModel = %+v, want one row", rep.Usage.ByModel)
+	}
+	if got := rep.Usage.ByModel[0].CostBasis; got != string(status.CostBasisMixed) {
+		t.Errorf("ByModel[0].CostBasis = %q, want mixed", got)
+	}
+	if len(rep.Usage.ByProject) != 1 {
+		t.Fatalf("ByProject = %+v, want one row", rep.Usage.ByProject)
+	}
+	if got := rep.Usage.ByProject[0].CostBasis; got != string(status.CostBasisMixed) {
+		t.Errorf("ByProject[0].CostBasis = %q, want mixed", got)
+	}
+
+	doc := mustMarshal(t, rep)
+	for _, want := range []string{`"costBasis"`, `"costBasis":"mixed"`} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("report JSON is missing %s:\n%s", want, doc)
+		}
+	}
+
+	// The HTML rendering is a separate surface and must carry it too.
+	var buf strings.Builder
+	if err := RenderHTML(&buf, rep); err != nil {
+		t.Fatalf("RenderHTML: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "Cost basis") || !strings.Contains(html, "not comparable") {
+		t.Errorf("share HTML does not explain the cost basis:\n%s", html)
+	}
+	if strings.Count(html, "mixed") < 2 {
+		t.Errorf("share HTML does not label the rows: %s", html)
+	}
+}
 
 func TestManifestIsNonEmptyAndStable(t *testing.T) {
 	m1, m2 := Manifest(), Manifest()

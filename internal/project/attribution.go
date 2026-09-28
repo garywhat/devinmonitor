@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/garywhat/devinmonitor/internal/analytics"
 	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/report"
@@ -515,7 +516,21 @@ var cmdActivities = func() *cobra.Command {
 			for _, st := range categoryStats {
 				rows = append(rows, row{st.Name, st.Count, st.Cost})
 			}
-			sort.Slice(rows, func(i, j int) bool { return rows[i].cost > rows[j].cost })
+			// Cost is the primary ordering, but `rows` came from a map, so with equal
+			// costs (every free-tier session) the tie order was whatever Go's map
+			// iteration produced — the same command could print two different orders
+			// on two runs, and `tasks` (which orders by count) had no chance of
+			// matching it. Break ties by count and then by name: deterministic, and
+			// aligned with the `tasks` breakdown the user compares this table to.
+			sort.Slice(rows, func(i, j int) bool {
+				if rows[i].cost != rows[j].cost {
+					return rows[i].cost > rows[j].cost
+				}
+				if rows[i].count != rows[j].count {
+					return rows[i].count > rows[j].count
+				}
+				return rows[i].category < rows[j].category
+			})
 
 			var totalCost float64
 			var totalSessions int
@@ -540,41 +555,26 @@ var cmdActivities = func() *cobra.Command {
 	}
 }
 
-// categorizeSession classifies a session by its work type based on tool usage
-// and title/content keywords.
+// categorizeSession classifies a session by its work type for `activities`.
+//
+// It delegates to analytics.ClassifySession — the same taxonomy `tasks` uses —
+// because the two commands read the same sessions and are read side by side. A
+// second, title-keyword classifier lived here and disagreed with `tasks` on
+// everything: on the project's own database it reported Coding 7/7 (100%) while
+// `tasks` reported Debugging 5 / Planning 1 / Coding 1, because a session whose
+// title contains none of the magic words falls through to "Coding" no matter
+// what the session actually did.
+//
+// The title heuristic itself did not disappear: it moved INTO the shared
+// classifier as a last resort (analytics.classifyFromTitle), which is what lets
+// a session with pruned messages still be named while guaranteeing that the two
+// commands can only ever print the same category names.
+//
+// The function stays as the seam rather than being inlined at its one call site
+// so that the classification `activities` shows is discoverable in one place,
+// and so a future change has an obvious single caller to redirect.
 func categorizeSession(s model.Session) string {
-	// Build a text blob from title and tool calls for keyword matching.
-	blob := strings.ToLower(s.Title)
-	for tool := range s.ToolCalls {
-		blob += " " + tool
-	}
-
-	// Check for testing-related indicators.
-	if strings.Contains(blob, "test") || strings.Contains(blob, "pytest") || strings.Contains(blob, "jest") {
-		return "Testing"
-	}
-	// Check for debugging.
-	if strings.Contains(blob, "debug") || strings.Contains(blob, "fix") || strings.Contains(blob, "bug") || strings.Contains(blob, "error") {
-		return "Debugging"
-	}
-	// Check for refactoring.
-	if strings.Contains(blob, "refactor") || strings.Contains(blob, "rename") || strings.Contains(blob, "restructure") {
-		return "Refactoring"
-	}
-	// Check for documentation.
-	if strings.Contains(blob, "doc") || strings.Contains(blob, "readme") || strings.Contains(blob, "comment") {
-		return "Documentation"
-	}
-	// Check for deployment/CI.
-	if strings.Contains(blob, "deploy") || strings.Contains(blob, "ci") || strings.Contains(blob, "release") || strings.Contains(blob, "goreleaser") {
-		return "DevOps"
-	}
-	// Check for git/commit work.
-	if strings.Contains(blob, "git") || strings.Contains(blob, "commit") {
-		return "Git/VCS"
-	}
-	// Default: coding.
-	return "Coding"
+	return analytics.ClassifySession(&s)
 }
 
 func contains(xs []string, s string) bool {

@@ -13,6 +13,7 @@ import (
 	"github.com/garywhat/devinmonitor/internal/config"
 	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
+	"github.com/garywhat/devinmonitor/internal/reader"
 	"github.com/garywhat/devinmonitor/internal/report"
 	"github.com/garywhat/devinmonitor/internal/ui"
 )
@@ -156,14 +157,24 @@ var cmdSessionsEnhanced = func() *cobra.Command {
 					sortKey = v
 				}
 			}
-			// Persist flag if --save.
-			if save && sortKey != "" {
+			// Persist the flags if --save. The help text promises "save current
+			// flags", so `--save` on its own has to have a visible effect: it
+			// records the sort actually in effect, and when that is the default
+			// (no --sort anywhere) it clears a previously saved default rather
+			// than silently doing nothing. The old `if save && sortKey != ""`
+			// guard made bare `--save` a no-op that printed nothing at all, so
+			// the flag looked accepted and was ignored.
+			if save {
 				if cfg.SavedFlags == nil {
 					cfg.SavedFlags = map[string]string{}
 				}
 				cfg.SavedFlags["sessions.sort"] = sortKey
 				saveConfig()
-				fmt.Fprintf(os.Stderr, "Saved default sort: %s\n", sortKey)
+				if sortKey == "" {
+					fmt.Fprintln(os.Stderr, "Cleared saved default sort (the default sort is in effect).")
+				} else {
+					fmt.Fprintf(os.Stderr, "Saved default sort: %s\n", sortKey)
+				}
 			}
 
 			render := func() error {
@@ -210,6 +221,7 @@ var cmdSessionsEnhanced = func() *cobra.Command {
 
 				t := buildSessionsTable(rows, verbose)
 				fmt.Println(t.String())
+				reportTranscriptRecovery(r)
 				return nil
 			}
 			if watch {
@@ -235,6 +247,32 @@ var cmdSessionsEnhanced = func() *cobra.Command {
 	c.Flags().BoolVar(&save, "save", false, "save current flags as default")
 	c.Flags().Int("interval", 3, "refresh interval in seconds (for --watch)")
 	return c
+}
+
+// reportTranscriptRecovery notes how much of the list came from Devin's
+// transcripts rather than sessions.db.
+//
+// Without it the second source is invisible: a user whose sessions.db was
+// pruned suddenly sees more sessions than their database contains, with nothing
+// explaining where they came from. It is a footer rather than a table column
+// because it describes the whole list, not any one row, and it is silent when
+// transcripts contributed nothing so the common case is unchanged.
+func reportTranscriptRecovery(r reader.Reader) {
+	src, ok := r.(reader.TranscriptSource)
+	if !ok {
+		return
+	}
+	recovered, skipped, err := src.TranscriptRecovery()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: transcripts not read: %v\n", err)
+		return
+	}
+	if recovered > 0 {
+		fmt.Printf("  %d session(s) recovered from Devin's transcripts (no longer in sessions.db).\n", recovered)
+	}
+	if skipped > 0 {
+		fmt.Fprintf(os.Stderr, "warning: %d transcript file(s) could not be read\n", skipped)
+	}
 }
 
 func sortSessionRows(rows []report.SessionRow, key string) {

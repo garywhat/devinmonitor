@@ -169,7 +169,20 @@ func cmdCompare() *cobra.Command {
 
 			// Month-over-month shortcut (#20). Reject unknown modes instead
 			// of silently falling through to the custom path.
-			switch strings.ToLower(strings.TrimSpace(mode)) {
+			//
+			// Bare `compare` has no --current/--previous and so cannot run the
+			// custom path at all: it used to walk into parsePeriod("") and exit
+			// 1 with "invalid --current period: empty period". A command whose
+			// no-argument form always fails is a bug in its defaults, so when
+			// --mode was not given explicitly AND no period was supplied, fall
+			// back to the mode that needs no arguments. An explicit --mode
+			// always wins, and so does any explicit --current/--previous.
+			effectiveMode := strings.ToLower(strings.TrimSpace(mode))
+			if !cmd.Flags().Changed("mode") && current == "" && previous == "" {
+				effectiveMode = "mom"
+			}
+
+			switch effectiveMode {
 			case "mom":
 				pc := BuildMonthOverMonth(ss)
 				fmt.Println(RenderMonthOverMonth(pc))
@@ -178,6 +191,13 @@ func cmdCompare() *cobra.Command {
 				// fall through to the custom period comparison below
 			default:
 				fmt.Fprintf(os.Stderr, "unknown --mode %q (use custom|mom)\n", mode)
+				os.Exit(1)
+			}
+
+			// A custom comparison needs both periods. Say that, rather than
+			// letting parsePeriod report only the first empty one.
+			if current == "" || previous == "" {
+				fmt.Fprintln(os.Stderr, "compare --mode custom needs both --current and --previous (e.g. --current 2026-09 --previous 2026-08); run `compare --mode mom` for the month-over-month view")
 				os.Exit(1)
 			}
 

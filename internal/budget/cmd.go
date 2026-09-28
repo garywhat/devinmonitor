@@ -27,9 +27,17 @@ func init() {
 	cli.Register(cmdCost)
 }
 
-// openReader opens the Devin CLI session store. dataDir is optional; when
-// empty, reader.Open auto-detects via DEVIN_DATA_DIR and platform defaults.
-func openReader(dataDir string) reader.Reader {
+// openReader opens the Devin CLI session store using the inherited --data-dir
+// persistent flag. When the flag is empty, reader.Open auto-detects via
+// DEVIN_DATA_DIR and platform defaults.
+//
+// The flag MUST be read here rather than passed as a literal empty string:
+// reader.ResolveDBPath treats an explicit dataDir as authoritative and errors
+// when dataDir/sessions.db is missing, but an empty string silently falls
+// through to platform defaults. Hardcoding "" therefore made every command in
+// this package ignore --data-dir and report the default database's numbers.
+func openReader(cmd *cobra.Command) reader.Reader {
+	dataDir, _ := cmd.Flags().GetString("data-dir")
 	r, err := reader.Open(dataDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "open reader: %v\n", err)
@@ -45,7 +53,7 @@ func cmdBudget() *cobra.Command {
 		Use:   "budget",
 		Short: i18n.T("cmd.budget"),
 		Run: func(cmd *cobra.Command, args []string) {
-			r := openReader("")
+			r := openReader(cmd)
 			defer r.Close()
 			ss, err := r.Sessions()
 			if err != nil {
@@ -94,7 +102,7 @@ func cmdBurnRate() *cobra.Command {
 		Use:   "burn-rate",
 		Short: i18n.T("cmd.burnRate"),
 		Run: func(cmd *cobra.Command, args []string) {
-			r := openReader("")
+			r := openReader(cmd)
 			defer r.Close()
 			ss, err := r.Sessions()
 			if err != nil {
@@ -122,7 +130,7 @@ func cmdProjection() *cobra.Command {
 		Use:   "projection",
 		Short: i18n.T("cmd.projection"),
 		Run: func(cmd *cobra.Command, args []string) {
-			r := openReader("")
+			r := openReader(cmd)
 			defer r.Close()
 			ss, err := r.Sessions()
 			if err != nil {
@@ -169,7 +177,7 @@ func cmdPlanShow() *cobra.Command {
 		Use:   "show",
 		Short: i18n.T("cmd.planShow"),
 		Run: func(cmd *cobra.Command, args []string) {
-			r := openReader("")
+			r := openReader(cmd)
 			defer r.Close()
 			ss, err := r.Sessions()
 			if err != nil {
@@ -314,7 +322,7 @@ func cmdTopCost() *cobra.Command {
 		Use:   "top-cost",
 		Short: i18n.T("cmd.topCost"),
 		Run: func(cmd *cobra.Command, args []string) {
-			r := openReader("")
+			r := openReader(cmd)
 			defer r.Close()
 			ss, err := r.Sessions()
 			if err != nil {
@@ -360,7 +368,7 @@ func cmdCost() *cobra.Command {
 		Use:   "cost",
 		Short: i18n.T("cmd.cost"),
 		Run: func(cmd *cobra.Command, args []string) {
-			r := openReader("")
+			r := openReader(cmd)
 			defer r.Close()
 			ss, err := r.Sessions()
 			if err != nil {

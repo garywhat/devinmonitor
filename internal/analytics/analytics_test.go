@@ -813,6 +813,34 @@ func TestClassifySession(t *testing.T) {
 			}},
 			want: CatDebugging,
 		},
+		// ---- the title/tool-name last resort ----
+		{
+			name: "no evidence at all falls back to the title",
+			sess: model.Session{ID: "s", Title: "Write unit tests"},
+			want: CatTesting,
+		},
+		{
+			name: "the fallback still produces the categories the old activities heuristic had",
+			sess: model.Session{ID: "s", Title: "Refactor the parser"},
+			want: CatRefactoring,
+		},
+		{
+			name: "tool-name counters feed the fallback when the messages are gone",
+			sess: model.Session{ID: "s", Title: "misc", ToolCalls: map[string]int{"git": 1}},
+			want: CatGitOps,
+		},
+		{
+			name: "a title with no keyword is still no evidence",
+			sess: model.Session{ID: "s", Title: "Implement the parser"},
+			want: CatConversation,
+		},
+		{
+			name: "evidence outranks the title",
+			sess: model.Session{ID: "s", Title: "Fix the login bug", Messages: []model.Message{
+				{NodeID: 1, Role: "assistant", ToolCalls: []model.ToolCall{tcRead("r1", "/repo/a.go")}},
+			}},
+			want: CatExploration,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

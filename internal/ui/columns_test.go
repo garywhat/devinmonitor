@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -47,12 +48,15 @@ func TestHideColumnsDropsTheColumn(t *testing.T) {
 	t.Run("the header must match exactly", func(t *testing.T) {
 		HideColumns("Cost")
 		out := NewTable("Cost Center", "Cost").Row("a", "b").String()
-		// "Cost Center" is a different column and must survive.
-		if !strings.Contains(out, "Cost Center") {
-			t.Errorf("an unrelated header beginning with the hidden text was dropped:\n%s", out)
+		// Compare header CELLS rather than substrings: "│ Cost Center │"
+		// contains "│ Cost ", so a substring assertion here tests the test, not
+		// the behaviour.
+		cells := headerCells(out)
+		if len(cells) != 1 {
+			t.Fatalf("got %d header cells %v, want 1 (only 'Cost Center')", len(cells), cells)
 		}
-		if strings.Contains(out, "│ Cost ") {
-			t.Errorf("the exact header was not dropped:\n%s", out)
+		if cells[0] != "Cost Center" {
+			t.Errorf("surviving header = %q, want %q", cells[0], "Cost Center")
 		}
 	})
 
@@ -116,3 +120,29 @@ func TestHideColumnsLeavesAlignmentSane(t *testing.T) {
 		}
 	}
 }
+
+// headerCells returns the trimmed cell values of a rendered table's header row,
+// so an assertion can compare columns rather than substrings.
+func headerCells(rendered string) []string {
+	for _, line := range strings.Split(rendered, "\n") {
+		if !strings.HasPrefix(line, "│") {
+			continue
+		}
+		inner := strings.Trim(line, "│")
+		parts := strings.Split(inner, "│")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			out = append(out, strings.TrimSpace(strings.ReplaceAll(p, "\x1b", "")))
+		}
+		// Strip any residual ANSI sequences before comparing.
+		for i, c := range out {
+			out[i] = ansiStrip(c)
+		}
+		return out
+	}
+	return nil
+}
+
+var ansiSeq = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+func ansiStrip(s string) string { return ansiSeq.ReplaceAllString(s, "") }

@@ -9,6 +9,7 @@
 package project
 
 import (
+	"github.com/garywhat/devinmonitor/internal/analytics"
 	"io"
 	"os"
 	"strings"
@@ -392,22 +393,78 @@ func TestCategorizeCommand(t *testing.T) {
 }
 
 func TestCategorizeSession(t *testing.T) {
+	// This function used to run its own title-keyword heuristic, which gave
+	// `activities` a different answer from `tasks` for the same sessions --
+	// measured on a real database, `tasks` reported "Debugging 5 / Planning 1"
+	// while `activities` reported "Coding 7" (100%). The heuristic was the
+	// cause: its keywords matched almost nothing and every real session fell
+	// through to its "Coding" default.
+	//
+	// It now delegates to analytics.ClassifySession, so both commands read one
+	// taxonomy through one entry point. The old heuristic survives inside that
+	// classifier as a LAST RESORT -- consulted only when no message supplied any
+	// evidence -- which is why a bare title still yields a category instead of
+	// "Conversation". Devin prunes session storage, so "the records are gone" is
+	// a real state, and a title-derived answer beats no answer for it.
+	//
+	// Two consequences are pinned below:
+	//   - the label vocabulary is the shared one: "Git/VCS" -> "Git Ops",
+	//     "DevOps" -> "Build/Deploy", while Refactoring and Documentation stay
+	//     (they are first-class categories in the shared taxonomy now);
+	//   - evidence always outranks the title: "Fix the login bug" over a
+	//     read-only transcript is Exploration, not Debugging.
+	assistant := func(calls ...model.ToolCall) []model.Message {
+		return []model.Message{{NodeID: 1, Role: "assistant", ToolCalls: calls}}
+	}
+	edit := model.ToolCall{ID: "e1", Name: "edit", Arguments: `{"path":"/repo/a.go"}`}
+	read := model.ToolCall{ID: "r1", Name: "read", Arguments: `{"path":"/repo/a.go"}`}
+	exec := func(cmd string) model.ToolCall {
+		return model.ToolCall{ID: "x1", Name: "exec", Arguments: `{"command":"` + cmd + `"}`}
+	}
+
 	cases := []struct {
 		name string
 		s    model.Session
 		want string
 	}{
+		// ---- evidence-based (message tool calls, the primary path) ----
+		{"edits only is coding",
+			model.Session{Messages: assistant(edit)}, "Coding"},
+		{"edit plus a debug keyword is debugging",
+			model.Session{Messages: append(assistant(edit),
+				model.Message{NodeID: 2, Role: "user", Content: "fix the failing test"})}, "Debugging"},
+		{"reads without edits are exploration",
+			model.Session{Messages: assistant(read)}, "Exploration"},
+		{"a test command is testing",
+			model.Session{Messages: assistant(exec("go test ./..."))}, "Testing"},
+		{"a build command is build/deploy",
+			model.Session{Messages: assistant(exec("go build ./..."))}, "Build/Deploy"},
+		{"a git command is git ops",
+			model.Session{Messages: assistant(exec("git commit -m wip"))}, "Git Ops"},
+		{"an empty session is a conversation",
+			model.Session{}, "Conversation"},
+
+		// ---- title last resort (no message evidence at all) ----
 		{"title says tests", model.Session{Title: "Write unit tests"}, "Testing"},
 		{"title says fix", model.Session{Title: "Fix the login bug"}, "Debugging"},
 		{"title says refactor", model.Session{Title: "Refactor the parser"}, "Refactoring"},
 		{"title says readme", model.Session{Title: "Update the README"}, "Documentation"},
-		{"title says deploy", model.Session{Title: "Deploy to prod"}, "DevOps"},
-		{"title says commit", model.Session{Title: "Commit the changes"}, "Git/VCS"},
-		{"nothing matches", model.Session{Title: "Implement the parser"}, "Coding"},
-		{"empty session", model.Session{}, "Coding"},
-		{"tool name matches git", model.Session{Title: "misc", ToolCalls: map[string]int{"git": 1}}, "Git/VCS"},
-		{"tool name matches deploy", model.Session{Title: "zzz", ToolCalls: map[string]int{"deploy_tool": 1}}, "DevOps"},
-		{"testing wins over debugging", model.Session{Title: "Debug the test failure"}, "Testing"},
+		{"title says deploy", model.Session{Title: "Deploy to prod"}, "Build/Deploy"},
+		{"title says commit", model.Session{Title: "Commit the changes"}, "Git Ops"},
+		{"testing wins over debugging when both appear in a title",
+			model.Session{Title: "Debug the test failure"}, "Testing"},
+		{"a title with no keyword stays unclassified",
+			model.Session{Title: "Implement the parser"}, "Conversation"},
+		{"tool-name counters are the fallback when messages are gone",
+			model.Session{Title: "misc", ToolCalls: map[string]int{"git": 1}}, "Git Ops"},
+		{"tool-name counters match deploy too",
+			model.Session{Title: "zzz", ToolCalls: map[string]int{"deploy_tool": 1}}, "Build/Deploy"},
+
+		// ---- but evidence outranks the title ----
+		{"a title that says fix cannot override read-only evidence",
+			model.Session{Title: "Fix the login bug", Messages: assistant(read)}, "Exploration"},
+		{"a title that says deploy cannot override edit evidence",
+			model.Session{Title: "Deploy to prod", Messages: assistant(edit)}, "Coding"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -415,6 +472,29 @@ func TestCategorizeSession(t *testing.T) {
 				t.Errorf("categorizeSession(%+v) = %q, want %q", c.s, got, c.want)
 			}
 		})
+	}
+}
+
+// TestTasksAndActivitiesAgree is the guard for the contradiction this change
+// removes: the two commands used to answer differently for the same sessions.
+// They must share one taxonomy through one entry point -- including for a
+// session whose only surviving signal is its title, which is exactly where a
+// private fallback inside one command would reintroduce the disagreement.
+func TestTasksAndActivitiesAgree(t *testing.T) {
+	ss := []model.Session{
+		{Messages: []model.Message{{NodeID: 1, Role: "assistant",
+			ToolCalls: []model.ToolCall{{ID: "e1", Name: "edit", Arguments: `{"path":"/a.go"}`}}}}},
+		{Messages: []model.Message{{NodeID: 1, Role: "assistant",
+			ToolCalls: []model.ToolCall{{ID: "x1", Name: "exec", Arguments: `{"command":"go test ./..."}`}}}}},
+		{},
+		{Title: "Refactor the parser"},
+		{Title: "Commit the changes", ToolCalls: map[string]int{"git": 1}},
+	}
+	for i := range ss {
+		s := &ss[i]
+		if a, b := analytics.ClassifySession(s), categorizeSession(*s); a != b {
+			t.Errorf("session %d: tasks says %q but activities says %q; they must agree", i, a, b)
+		}
 	}
 }
 

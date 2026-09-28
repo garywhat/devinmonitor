@@ -2,6 +2,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -189,21 +190,78 @@ func installPricingSources() {
 	model.SetPricingOverrides(overrides)
 }
 
+// applyConfigLocale applies the locale persisted by `config set locale`.
+//
+// Precedence is --locale flag > DEVINMONITOR_LOCALE > config file > system
+// detection. i18n.Init() already settled the two higher-precedence sources
+// (the flag via main()'s pre-scan, the environment inside detectLocale), so
+// this only fills the gap those two leave. The bug it fixes: `config set
+// locale zh` persisted cfg.Locale, but nothing ever read it, so the setting was
+// accepted and then silently ignored.
+func applyConfigLocale() {
+	// The environment outranks the config file, and i18n.Init() already
+	// honored it.
+	if os.Getenv("DEVINMONITOR_LOCALE") != "" {
+		return
+	}
+	if !configFileHasLocale() {
+		return
+	}
+	cfg := config.Global()
+	if cfg == nil || cfg.Locale == "" {
+		return
+	}
+	i18n.SetLocale(cfg.Locale)
+}
+
+// configFileHasLocale reports whether the config file on disk actually carries
+// a "locale" key.
+//
+// config.Load() fills Locale with the default "en" when the key is absent, so
+// cfg.Locale on its own cannot tell "the user chose English" apart from "the
+// user never chose anything". Applying the default unconditionally would make
+// it outrank system detection, which would turn the LANG / LC_ALL / OS-locale
+// fallback into dead code and silently switch a Chinese system to English — a
+// worse bug than the one being fixed. A config file with no locale key must
+// therefore leave detection alone.
+func configFileHasLocale() bool {
+	data, err := os.ReadFile(config.Path())
+	if err != nil {
+		return false
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return false
+	}
+	_, ok := raw["locale"]
+	return ok
+}
+
 func main() {
 	if err := i18n.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "i18n init: %v\n", err)
 	}
 	// Pre-scan --locale so that Short descriptions are translated before
 	// commands are built (cobra evaluates Short at registration time).
+	localeFlagPassed := false
 	for i, arg := range os.Args {
 		if arg == "--locale" && i+1 < len(os.Args) {
 			i18n.SetLocale(os.Args[i+1])
+			localeFlagPassed = true
 			break
 		}
 		if strings.HasPrefix(arg, "--locale=") {
 			i18n.SetLocale(strings.TrimPrefix(arg, "--locale="))
+			localeFlagPassed = true
 			break
 		}
+	}
+	// Apply the locale persisted by `config set locale`. This must happen here,
+	// before the command tree is built: cobra evaluates every Short and flag-help
+	// string through i18n.T() at construction time, so a locale applied later
+	// would leave the whole help text in the previously detected language.
+	if !localeFlagPassed {
+		applyConfigLocale()
 	}
 	root := &cobra.Command{
 		Use:   "devinmonitor",
@@ -405,97 +463,6 @@ func cmdLive() *cobra.Command {
 }
 
 // ---- sessions ----
-
-func cmdSessions() *cobra.Command {
-	var verbose bool
-	c := &cobra.Command{
-		Use:   "sessions",
-		Short: i18n.T("cmd.sessions"),
-		Run: func(cmd *cobra.Command, args []string) {
-			r := openReader()
-			defer r.Close()
-			ss, err := r.Sessions()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "%v\n", err)
-				os.Exit(1)
-			}
-			rows := report.BuildSessionRows(ss)
-			var t *ui.TableBuilder
-			if verbose {
-				// Full table with all columns.
-				t = ui.NewTable(
-					i18n.T("common.id"),
-					i18n.T("common.title"),
-					i18n.T("common.model"),
-					i18n.T("common.mode"),
-					i18n.T("common.project"),
-					i18n.T("common.subAgents"),
-					i18n.T("common.requests"),
-					i18n.T("common.input"),
-					i18n.T("common.output"),
-					i18n.T("common.cacheRead"),
-					i18n.T("common.duration"),
-					i18n.T("common.cost"),
-				).
-					RightAlign(5, 6, 7, 8, 9, 10)
-				for _, row := range rows {
-					costStr := report.FormatCost(row.Cost, row.IsFree)
-					if row.CostEstimated && row.Cost > 0 {
-						costStr += " " + i18n.T("common.est")
-					}
-					subs := "-"
-					if row.SubAgents > 0 {
-						subs = fmt.Sprintf("%d", row.SubAgents)
-					}
-					t.Row(
-						row.ID,
-						row.Title,
-						row.Model,
-						row.Mode,
-						row.Project,
-						subs,
-						fmt.Sprintf("%d", row.Requests),
-						report.FormatTok(row.InputTok),
-						report.FormatTok(row.OutputTok),
-						report.FormatTok(row.CacheRead),
-						report.FormatDur(row.Duration),
-						costStr,
-					)
-				}
-			} else {
-				// Compact table: 7 core columns, fits 80-col terminals.
-				t = ui.NewTable(
-					i18n.T("common.id"),
-					i18n.T("common.title"),
-					i18n.T("common.model"),
-					i18n.T("common.project"),
-					i18n.T("common.requests"),
-					i18n.T("common.input"),
-					i18n.T("common.cost"),
-				).
-					RightAlign(4, 5)
-				for _, row := range rows {
-					costStr := report.FormatCost(row.Cost, row.IsFree)
-					if row.CostEstimated && row.Cost > 0 {
-						costStr += " " + i18n.T("common.est")
-					}
-					t.Row(
-						row.ID,
-						row.Title,
-						row.Model,
-						row.Project,
-						fmt.Sprintf("%d", row.Requests),
-						report.FormatTok(row.InputTok),
-						costStr,
-					)
-				}
-			}
-			fmt.Println(t.String())
-		},
-	}
-	c.Flags().BoolVar(&verbose, "verbose", false, "show all columns (mode, output, cache, duration)")
-	return c
-}
 
 func cmdSession() *cobra.Command {
 	c := &cobra.Command{
@@ -1056,48 +1023,6 @@ func cmdModel() *cobra.Command {
 				t.TotalRow("TOTAL", fmt.Sprintf("%d", totCalls))
 				fmt.Println(t.String())
 			}
-		},
-	}
-}
-
-// ---- projects ----
-
-func cmdProjects() *cobra.Command {
-	return &cobra.Command{
-		Use:   "projects",
-		Short: i18n.T("cmd.projects"),
-		Run: func(cmd *cobra.Command, args []string) {
-			r := openReader()
-			defer r.Close()
-			ss, err := r.Sessions()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "%v\n", err)
-				os.Exit(1)
-			}
-			rows := report.BuildProjectRows(ss)
-			t := ui.NewTable(
-				i18n.T("common.project"),
-				i18n.T("common.sessions"),
-				i18n.T("common.requests"),
-				i18n.T("common.input"),
-				i18n.T("common.output"),
-				i18n.T("common.total"),
-				i18n.T("common.cost"),
-				i18n.T("common.model"),
-			).RightAlign(1, 2, 3, 4, 5)
-			for _, row := range rows {
-				t.Row(
-					row.Name,
-					fmt.Sprintf("%d", row.Sessions),
-					fmt.Sprintf("%d", row.Requests),
-					report.FormatTok(row.InputTok),
-					report.FormatTok(row.OutputTok),
-					report.FormatTok(row.InputTok+row.OutputTok+row.CacheRead+row.CacheWrite),
-					report.FormatCost(row.Cost, row.IsFree),
-					compactModels(row.Models),
-				)
-			}
-			fmt.Println(t.String())
 		},
 	}
 }

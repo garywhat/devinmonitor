@@ -47,6 +47,17 @@ func GetMany(names ...string) []func() *cobra.Command {
 // Remaining returns command factories whose Use name is NOT in the
 // provided set. Useful for adding any not-yet-added commands after
 // an explicit ordered list.
+//
+// CURRENTLY CONTRIBUTES NOTHING. main() calls Remaining(featureNames...) where
+// featureNames holds every name in buildOrderedCommands(), and that list is
+// audited to name all 51 registered factories explicitly, so this always
+// returns an empty slice and main()'s append loop never runs.
+// TestEveryRegisteredCommandIsExplicitlyOrdered (package main) fails if that
+// stops being true.
+//
+// Kept on purpose as a safety net: a command registered by a future feature
+// package would still reach --help (at the end, unordered) instead of silently
+// vanishing from the CLI. Deleting it is only safe while that test passes.
 func Remaining(exclude ...string) []func() *cobra.Command {
 	ex := make(map[string]bool, len(exclude))
 	for _, n := range exclude {

@@ -18,18 +18,36 @@ import (
 	"github.com/garywhat/devinmonitor/internal/report"
 )
 
-// ---- Web Dashboard (#84) ----
+// ---- Local web dashboard (#84) ----
+//
+// Local-only by construction. The server binds the IPv4 loopback address
+// (127.0.0.1) and nothing else, reads the local sessions.db, and never sends
+// data anywhere: there is no upload path, no hosted sharing, no public
+// leaderboard and no telemetry behind these routes or in this file.
+//
+// Boundary with `share --format html`: `web` serves *your* machine and
+// therefore renders local project paths and session IDs. `share --format html`
+// writes a sanitised, self-contained page that is safe to send to someone
+// else. Keep the two uses separate.
 
 var cmdWeb = func() *cobra.Command {
 	var port int
 	c := &cobra.Command{
 		Use:   "web",
 		Short: i18n.T("cmd.web"),
+		Long: "Start the local web dashboard on 127.0.0.1.\n\n" +
+			"Local only: the server binds the loopback address (never 0.0.0.0),\n" +
+			"reads your local sessions.db, and sends nothing anywhere - no upload,\n" +
+			"no hosted sharing and no telemetry. It renders your real data, so it\n" +
+			"includes local project paths, titles and session IDs: it is for your\n" +
+			"machine, not for sending to someone else.\n\n" +
+			"For a sanitised, self-contained page you can safely send, use:\n" +
+			"  devinmonitor share --format html",
 		Run: func(cmd *cobra.Command, args []string) {
 			runWebServer(cmd, port)
 		},
 	}
-	c.Flags().IntVar(&port, "port", 8080, "port to listen on")
+	c.Flags().IntVar(&port, "port", 8080, "loopback port to listen on")
 	return c
 }
 
@@ -57,8 +75,16 @@ func runWebServer(cmd *cobra.Command, port int) {
 	// Background poller: periodically refreshes data and notifies SSE subscribers.
 	go st.pollLoop()
 
-	addr := fmt.Sprintf(":%d", port)
-	fmt.Fprintf(os.Stderr, "DevinMonitor web dashboard: http://localhost:%d\n", port)
+	// Loopback only. This is the whole point of the command: it is a local
+	// viewer for local data. Binding 0.0.0.0 (or any external address) would
+	// expose session titles, project paths and costs to the network, so the
+	// host is pinned here and must stay pinned.
+	const host = "127.0.0.1"
+	addr := fmt.Sprintf("%s:%d", host, port)
+	url := fmt.Sprintf("http://%s:%d", host, port)
+	fmt.Fprintf(os.Stderr, "DevinMonitor local dashboard: %s\n", url)
+	fmt.Fprintf(os.Stderr, "Local only: bound to %s (loopback), reads your local sessions.db, sends nothing anywhere.\n", host)
+	fmt.Fprintf(os.Stderr, "Shows local project paths and session IDs; for a sanitised copy use: devinmonitor share --format html\n")
 	fmt.Fprintf(os.Stderr, "Press Ctrl+C to stop.\n")
 
 	srv := &http.Server{Addr: addr, Handler: mux}
@@ -212,10 +238,21 @@ const webDashboardHTML = `<!DOCTYPE html>
   th { color: #7c7cff; }
   canvas { margin: 10px 0; }
   #alerts { color: #ff6b6b; }
+  .notice { background: #16213e; border: 1px solid #233; border-left: 3px solid #ffd700;
+            border-radius: 6px; padding: 10px 14px; color: #b8b8c8; font-size: 13px; line-height: 1.5; }
+  .notice code { color: #ffd700; }
 </style>
 </head>
 <body>
 <h1>DevinMonitor Dashboard</h1>
+<p class="notice">
+  <strong>Local only.</strong> This page is served from <code>127.0.0.1</code> (loopback, never
+  <code>0.0.0.0</code>). It reads your local <code>sessions.db</code> and sends nothing anywhere —
+  no upload, no hosted sharing, no leaderboard, no telemetry. It renders your real data, so it
+  includes local project paths and session IDs. To hand a report to someone else, use
+  <code>devinmonitor share --format html</code> instead: sanitised, aggregate-only,
+  self-contained and no JavaScript.
+</p>
 <div class="grid" id="kpis"></div>
 <canvas id="chart" width="800" height="200"></canvas>
 <h2>Sessions</h2>

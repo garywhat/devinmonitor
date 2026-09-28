@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/garywhat/devinmonitor/internal/config"
+	"github.com/garywhat/devinmonitor/internal/export"
 	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/reader"
@@ -119,9 +120,14 @@ func snapshotFailureCode(semantic bool) int {
 	return 1
 }
 
-// renderSnapshotPanel prints the human-facing snapshot panel. This is the
-// command's original output and is kept byte-for-byte compatible when no
-// protocol flags are passed.
+// renderSnapshotPanel prints the human-facing snapshot panel.
+//
+// Its numbers are unchanged, but each cost figure now carries its cost basis
+// and the panel ends with the basis legend. That is a deliberate, documented
+// departure from "byte-for-byte compatible": the panel used to print
+// "[official]" beside today's cost, which answers "is it an estimate?" and not
+// "is it the same unit as the month figure below it?" — and a single unlabelled
+// figure is exactly what a reader compares against an incomparable one.
 func renderSnapshotPanel(ss []model.Session, now time.Time, cfg *config.Config) {
 	sum := computeCostSummary(ss)
 
@@ -132,13 +138,24 @@ func renderSnapshotPanel(ss []model.Session, now time.Time, cfg *config.Config) 
 		}
 	}
 
+	// The period boundaries and the strict `After` comparisons mirror
+	// computeCostSummary exactly, so a figure's basis always describes the
+	// sessions that produced that figure.
+	todayStart := model.DayStart(now)
+	weekStart := todayStart.AddDate(0, 0, -int(now.Weekday()))
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	todayBasis := export.CostBasisOfSessionsSince(ss, todayStart)
+	weekBasis := export.CostBasisOfSessionsSince(ss, weekStart)
+	monthBasis := export.CostBasisOfSessionsSince(ss, monthStart)
+	allBasis := export.CostBasisOfSessions(ss)
+
 	fmt.Println(ui.Panel("DevinMonitor Status", fmt.Sprintf(
-		"Active sessions:  %d\nToday's cost:     $%.2f  [%s]\nWeek's cost:      $%.2f\nMonth's cost:     $%.2f\nTotal cost:       $%.2f\nTotal sessions:   %d\nTotal requests:   %d\nBudget daily:     $%.2f\nBudget monthly:   $%.2f\nACU rate:         %.2f USD/ACU\nPlan:             %s",
+		"Active sessions:  %d\nToday's cost:     $%.2f  [%s] %s\nWeek's cost:      $%.2f  %s\nMonth's cost:     $%.2f  %s\nTotal cost:       $%.2f  %s\nTotal sessions:   %d\nTotal requests:   %d\nBudget daily:     $%.2f\nBudget monthly:   $%.2f\nACU rate:         %.2f USD/ACU\nPlan:             %s",
 		sum.ActiveSess,
-		sum.TodayCost, sum.Provenance,
-		sum.WeekCost,
-		sum.MonthCost,
-		sum.TotalCost,
+		sum.TodayCost, sum.Provenance, todayBasis.Tag(),
+		sum.WeekCost, weekBasis.Tag(),
+		sum.MonthCost, monthBasis.Tag(),
+		sum.TotalCost, allBasis.Tag(),
 		sum.TotalSess,
 		sum.TotalReqs,
 		cfg.BudgetDaily,
@@ -146,6 +163,9 @@ func renderSnapshotPanel(ss []model.Session, now time.Time, cfg *config.Config) 
 		cfg.ACURate,
 		cfg.Plan,
 	), 60))
+	// The legend is what turns "[acu]" and "[token est]" into a usable warning;
+	// it is printed against the combined basis so a panel that mixes both says so.
+	fmt.Println(status.CombineCostBasis(todayBasis, weekBasis, monthBasis, allBasis).Legend())
 
 	if len(active) > 0 {
 		fmt.Println()

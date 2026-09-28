@@ -254,7 +254,11 @@ type ModelRow struct {
 	CacheWriteTokens int64   `json:"cacheWriteTokens"`
 	Requests         int     `json:"requests"`
 	Cost             float64 `json:"cost"`
-	Share            float64 `json:"share"` // % of (input+output) tokens, 1 decimal
+	// CostBasis names the meter behind Cost, per row: a table whose rows mix
+	// "acu" and "token_estimate" invites exactly the comparison this field
+	// exists to prevent, and the row is the smallest place it can be prevented.
+	CostBasis CostBasis `json:"costBasis"`
+	Share     float64   `json:"share"` // % of (input+output) tokens, 1 decimal
 }
 
 // Breakdown aggregates the usage numbers behind the status.
@@ -262,14 +266,25 @@ type Breakdown struct {
 	ByModel        []ModelRow `json:"byModel"`
 	ACU            bool       `json:"acu"`
 	CostProvenance Confidence `json:"costProvenance"`
-	TodayCost      float64    `json:"todayCost"`
-	WeekCost       float64    `json:"weekCost"`
-	MonthCost      float64    `json:"monthCost"`
-	TotalCost      float64    `json:"totalCost"`
-	TotalSessions  int        `json:"totalSessions"`
-	TotalRequests  int        `json:"totalRequests"`
-	TotalTokens    int64      `json:"totalTokens"`
-	ActiveSessions int        `json:"activeSessions"`
+	// CostBasis names the meter behind every cost figure in this breakdown
+	// (todayCost, weekCost, monthCost, totalCost and the byModel rows). It is
+	// orthogonal to CostProvenance: the two answer "measured with what?" and
+	// "how trustworthy?" respectively. When it is "mixed" the figures add
+	// ACU-billed and token-estimated costs together, and a renderer must say so.
+	CostBasis     CostBasis `json:"costBasis"`
+	TodayCost     float64   `json:"todayCost"`
+	WeekCost      float64   `json:"weekCost"`
+	MonthCost     float64   `json:"monthCost"`
+	TotalCost     float64   `json:"totalCost"`
+	TotalSessions int       `json:"totalSessions"`
+	TotalRequests int       `json:"totalRequests"`
+	// TotalTokens is cache-inclusive: input + output + cacheRead + cacheWrite.
+	// The same key carries the same meaning in blocks, in the session export
+	// and in share; docs/snapshot.schema.json used to describe it as
+	// "input + output, per the same convention as share", which was true of
+	// neither document by the time anyone read it.
+	TotalTokens    int64 `json:"totalTokens"`
+	ActiveSessions int   `json:"activeSessions"`
 }
 
 // SchemaVersion is the snapshot schema version; bump on breaking changes.
@@ -326,9 +341,13 @@ type Input struct {
 	TotalTokens    int64
 	ActiveSessions int
 	CostProvenance Confidence
-	ACU            bool
-	ByModel        []ModelRow
-	Limits         map[string]*Window
+	// CostBasis names the meter behind the cost figures above. An empty or
+	// unrecognised value is normalised to "unavailable" when the snapshot is
+	// built, so the wire form is always one of the four enum values.
+	CostBasis CostBasis
+	ACU       bool
+	ByModel   []ModelRow
+	Limits    map[string]*Window
 
 	// StatusWindow names the key in Limits that drives the status code.
 	// Empty means no window drives it: status becomes 20/"" when no data.
@@ -370,6 +389,9 @@ func BuildSnapshot(in Input) Snapshot {
 			ByModel:        byModel,
 			ACU:            in.ACU,
 			CostProvenance: in.CostProvenance,
+			// Never emit an empty basis: a consumer switching on the enum must
+			// not have to treat "" as a fifth case.
+			CostBasis:      NormalizeCostBasis(in.CostBasis),
 			TodayCost:      in.TodayCost,
 			WeekCost:       in.WeekCost,
 			MonthCost:      in.MonthCost,
@@ -395,10 +417,18 @@ func EncodeJSON(s Snapshot) ([]byte, error) {
 // RenderCompact renders a strict ONE-LINE, ANSI-free summary suitable for a
 // shell/tmux statusline:
 //
-//	devinmonitor ok · today $1.23 · 19 sess · 29249 req
+//	devinmonitor ok · today $1.23 [acu] · 19 sess · 29249 req
 //
 // and when a usable window exists it appends " · 5h 42% on track (resets 14:30)".
 // The returned string contains no escape characters and no newline.
+//
+// The basis tag rides on the dollar figure itself. A statusline is the smallest
+// surface there is, and it is exactly where "today $1.23" would otherwise be
+// read as the same kind of quantity as yesterday's token-derived number; "[acu]"
+// or "[token est]" travels with the number so it cannot be separated from it.
+// The tag is short because the line must stay narrow; the full sentence behind
+// it is in Breakdown.CostBasis.Legend(), which `snapshot --json` and `status`
+// print.
 func RenderCompact(s Snapshot) string {
 	var b strings.Builder
 	b.WriteString("devinmonitor")
@@ -406,8 +436,9 @@ func RenderCompact(s Snapshot) string {
 		b.WriteString(" ")
 		b.WriteString(s.Status.Label)
 	}
-	fmt.Fprintf(&b, " · today $%.2f · %d sess · %d req",
-		s.Breakdown.TodayCost, s.Breakdown.TotalSessions, s.Breakdown.TotalRequests)
+	fmt.Fprintf(&b, " · today $%.2f %s · %d sess · %d req",
+		s.Breakdown.TodayCost, NormalizeCostBasis(s.Breakdown.CostBasis).Tag(),
+		s.Breakdown.TotalSessions, s.Breakdown.TotalRequests)
 
 	if key, w := compactWindow(s.Limits); w != nil {
 		b.WriteString(" · ")

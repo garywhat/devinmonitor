@@ -11,16 +11,31 @@ import (
 
 // Category names for task classification.
 const (
-	CatCoding       = "Coding"
-	CatDebugging    = "Debugging"
-	CatTesting      = "Testing"
-	CatExploration  = "Exploration"
-	CatPlanning     = "Planning"
-	CatDelegation   = "Delegation"
-	CatGitOps       = "Git Ops"
-	CatBuildDeploy  = "Build/Deploy"
-	CatConversation = "Conversation"
-	CatGeneral      = "General"
+	CatCoding        = "Coding"
+	CatDebugging     = "Debugging"
+	CatTesting       = "Testing"
+	CatExploration   = "Exploration"
+	CatPlanning      = "Planning"
+	CatDelegation    = "Delegation"
+	CatGitOps        = "Git Ops"
+	CatBuildDeploy   = "Build/Deploy"
+	CatRefactoring   = "Refactoring"
+	CatDocumentation = "Documentation"
+	CatConversation  = "Conversation"
+	CatGeneral       = "General"
+)
+
+// Title keywords for the last-resort classifier, checked in this order. They
+// are the vocabulary the `activities` command used exclusively before it shared
+// this taxonomy; they survive as a fallback because a session whose messages
+// were pruned or never recorded still has a title (see classifyFromTitle).
+var (
+	titleTestKeywords     = []string{"test", "pytest", "jest"}
+	titleDebugKeywords    = []string{"debug", "fix", "bug", "error"}
+	titleRefactorKeywords = []string{"refactor", "rename", "restructure"}
+	titleDocKeywords      = []string{"doc", "readme", "comment"}
+	titleDeployKeywords   = []string{"deploy", "ci", "release", "goreleaser"}
+	titleGitKeywords      = []string{"git", "commit"}
 )
 
 // debugKeywords are content keywords that indicate debugging activity.
@@ -164,6 +179,24 @@ func ClassifySession(s *model.Session) string {
 	for _, c := range s.ToolCalls {
 		totalTools += c
 	}
+
+	// Last resort, and only then: if NOTHING in any message supplied evidence
+	// (no tool call, no debug keyword), the title and the session-level tool
+	// names are the only signals left, so they get a say before the answer
+	// degrades to "Conversation" or "General".
+	//
+	// The guard is what keeps the title from overriding real evidence: a
+	// session titled "Fix the login bug" whose only recorded activity is reads
+	// still classifies as Exploration, because hasRead is evidence and the title
+	// is not. It matters because Devin prunes session storage, so "records are
+	// gone" is a state that really occurs, and reporting such a session as a
+	// conversation is a worse answer than a title-derived guess.
+	if !hasEdit && !hasRead && !hasExec && !hasSubAgent && !hasTodoWrite && !hasDebug {
+		if cat := classifyFromTitle(s); cat != "" {
+			return cat
+		}
+	}
+
 	if totalTools == 0 && !hasEdit && !hasRead && !hasExec && !hasSubAgent && !hasTodoWrite {
 		return CatConversation
 	}
@@ -171,8 +204,44 @@ func ClassifySession(s *model.Session) string {
 	return CatGeneral
 }
 
+// classifyFromTitle is the title-based last-resort classifier: it returns a
+// category from the same taxonomy as everything else, or "" when the title and
+// tool names say nothing useful.
+//
+// The matching is deliberately the loose substring matching the pre-unification
+// `activities` classifier used, including the tool-name blob, so that the
+// sessions it could name still get named. It is NOT consulted when any message
+// supplied evidence.
+func classifyFromTitle(s *model.Session) string {
+	blob := strings.ToLower(s.Title)
+	for tool := range s.ToolCalls {
+		blob += " " + strings.ToLower(tool)
+	}
+	switch {
+	case containsAny(blob, titleTestKeywords):
+		return CatTesting
+	case containsAny(blob, titleDebugKeywords):
+		return CatDebugging
+	case containsAny(blob, titleRefactorKeywords):
+		return CatRefactoring
+	case containsAny(blob, titleDocKeywords):
+		return CatDocumentation
+	case containsAny(blob, titleDeployKeywords):
+		return CatBuildDeploy
+	case containsAny(blob, titleGitKeywords):
+		return CatGitOps
+	}
+	return ""
+}
+
 // TaskCategories classifies all sessions and returns aggregated category
-// stats sorted by count descending.
+// stats sorted by count descending, then by name.
+//
+// The name tie-break is not cosmetic: `out` is built by iterating a map, so a
+// pure count sort left the order of equal-count categories to Go's map
+// iteration, which varies. `activities` prints the same categories and is
+// compared against this table next to it, so both now order ties the same
+// deterministic way (see categorizeSession in internal/project).
 func TaskCategories(ss []model.Session) []model.TaskCategory {
 	byCat := map[string]*model.TaskCategory{}
 	for i := range ss {
@@ -192,7 +261,10 @@ func TaskCategories(ss []model.Session) []model.TaskCategory {
 		out = append(out, *tc)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		return out[i].Count > out[j].Count
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Name < out[j].Name
 	})
 	return out
 }

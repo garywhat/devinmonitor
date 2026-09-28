@@ -21,13 +21,20 @@ import (
 
 	"github.com/garywhat/devinmonitor/internal/cli"
 	"github.com/garywhat/devinmonitor/internal/errscan"
+	"github.com/garywhat/devinmonitor/internal/export"
 	"github.com/garywhat/devinmonitor/internal/i18n"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/reader"
+	"github.com/garywhat/devinmonitor/internal/status"
 )
 
 // SchemaVersion is the share-schema version; bump on breaking changes.
-const SchemaVersion = 1
+//
+// v2: `usage.totalTokens` became cache-inclusive (input+output+cacheRead+
+// cacheWrite) so the name means the same thing here as it does in the status
+// snapshot, in `blocks` and in the session export. The old input+output figure
+// is still reported, under its own explicit name, `usage.nonCacheTokens`.
+const SchemaVersion = 2
 
 // UnknownLabel replaces anything that would otherwise leak structure: an empty
 // or separator-only working directory, a missing model name.
@@ -61,6 +68,10 @@ type ModelUsage struct {
 	InputTokens  int64   `json:"inputTokens"`
 	OutputTokens int64   `json:"outputTokens"`
 	Cost         float64 `json:"cost"`
+	// CostBasis names the meter behind Cost. A model table is the most
+	// comparison-prone surface there is ("this model costs more than that one"),
+	// so the label belongs on the row, not only on the report.
+	CostBasis string `json:"costBasis"`
 }
 
 // ProjectUsage is one project's aggregate, keyed by the LAST path segment only.
@@ -68,17 +79,41 @@ type ProjectUsage struct {
 	Project  string  `json:"project"`
 	Sessions int     `json:"sessions"`
 	Cost     float64 `json:"cost"`
+	// CostBasis names the meter behind Cost, for the same reason as ModelUsage.
+	CostBasis string `json:"costBasis"`
 }
 
 // Usage is the aggregate usage section.
 type Usage struct {
-	TotalSessions  int            `json:"totalSessions"`
-	TotalRequests  int            `json:"totalRequests"`
-	TotalTokens    int64          `json:"totalTokens"`
-	TotalCost      float64        `json:"totalCost"`
-	CostProvenance string         `json:"costProvenance"` // official | estimated | mixed | unknown
-	ByModel        []ModelUsage   `json:"byModel"`
-	ByProject      []ProjectUsage `json:"byProject"`
+	TotalSessions int `json:"totalSessions"`
+	TotalRequests int `json:"totalRequests"`
+	// TotalTokens is cache-inclusive: input + output + cacheRead + cacheWrite.
+	// The name carries that meaning in every JSON surface (status snapshot,
+	// blocks, session export); it used to mean input+output here only, which
+	// made two documents with the same key incomparable.
+	TotalTokens int64 `json:"totalTokens"`
+	// NonCacheTokens is input + output: the tokens that represent new work
+	// rather than re-read context, and the figure that used to be published as
+	// `totalTokens`. It has its own name precisely so the two can coexist
+	// without either one lying about what it counts.
+	NonCacheTokens int64   `json:"nonCacheTokens"`
+	TotalCost      float64 `json:"totalCost"`
+	// CostProvenance grades HOW TRUSTWORTHY TotalCost is (official |
+	// estimated | mixed | unknown).
+	CostProvenance string `json:"costProvenance"`
+	// CostBasis names WHAT TotalCost is measured with, using the same enum as
+	// the status snapshot and the session-level figures: "acu" (Devin's own
+	// ACU/credit meter), "token_estimate" (our token counts × model prices),
+	// "mixed" (both, added together) or "unavailable".
+	//
+	// It is deliberately not folded into CostProvenance: a report can honestly
+	// say "estimated" about a token-derived number and "official" about an
+	// ACU-derived one, and those two numbers are still not the same kind of
+	// quantity. A reader who receives this report needs the second fact to
+	// avoid comparing them.
+	CostBasis string         `json:"costBasis"`
+	ByModel   []ModelUsage   `json:"byModel"`
+	ByProject []ProjectUsage `json:"byProject"`
 }
 
 // Report is the sanitised, shareable document.
@@ -104,6 +139,7 @@ func Build(ss []model.Session, includeErrors bool, now time.Time) Report {
 	byModel := map[string]*ModelUsage{}
 	byProject := map[string]*ProjectUsage{}
 	sawOfficial, sawEstimated := false, false
+	var usageBases []status.CostBasis
 
 	for i := range ss {
 		s := &ss[i]
@@ -115,6 +151,14 @@ func Build(ss []model.Session, includeErrors bool, now time.Time) Report {
 		case ProvenanceEstimated:
 			sawEstimated = true
 		}
+		// The basis is the shared classification (export.SessionCostBasis), not a
+		// second opinion derived from `source`: the two answer different
+		// questions, and a model that is free or unpriced has a token-basis cost
+		// of 0 even though its provenance is "unknown" (nothing usable to
+		// estimate). Using the shared helper keeps this report from disagreeing
+		// with `status` and `snapshot` about the same sessions.
+		basis := export.SessionCostBasis(s)
+		usageBases = append(usageBases, basis)
 
 		requests := sessionRequests(s)
 		name := modelLabel(s)
@@ -127,6 +171,7 @@ func Build(ss []model.Session, includeErrors bool, now time.Time) Report {
 		mu.InputTokens += s.InputTokens
 		mu.OutputTokens += s.OutputTokens
 		mu.Cost += cost
+		mu.CostBasis = string(status.CombineCostBasis(status.CostBasis(mu.CostBasis), basis))
 
 		label := SanitizeProject(s.WorkingDir)
 		pu := byProject[label]
@@ -136,10 +181,14 @@ func Build(ss []model.Session, includeErrors bool, now time.Time) Report {
 		}
 		pu.Sessions++
 		pu.Cost += cost
+		pu.CostBasis = string(status.CombineCostBasis(status.CostBasis(pu.CostBasis), basis))
 
 		rep.Usage.TotalSessions++
 		rep.Usage.TotalRequests += requests
-		rep.Usage.TotalTokens += s.InputTokens + s.OutputTokens
+		// Both totals are accumulated here so "cache-inclusive" and "new work"
+		// can never drift apart between the JSON and the HTML rendering.
+		rep.Usage.TotalTokens += s.InputTokens + s.OutputTokens + s.CacheRead + s.CacheWrite
+		rep.Usage.NonCacheTokens += s.InputTokens + s.OutputTokens
 		rep.Usage.TotalCost += cost
 	}
 
@@ -153,6 +202,11 @@ func Build(ss []model.Session, includeErrors bool, now time.Time) Report {
 	default:
 		rep.Usage.CostProvenance = ProvenanceUnknown
 	}
+
+	// The aggregate basis of the report's TotalCost. status.CombineCostBasis
+	// turns "some sessions ACU-billed, some token-estimated" into "mixed", which
+	// is the value that carries the warning.
+	rep.Usage.CostBasis = string(status.CombineCostBasis(usageBases...))
 
 	rep.Usage.ByModel = sortedModels(byModel)
 	rep.Usage.ByProject = sortedProjects(byProject)

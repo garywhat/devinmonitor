@@ -98,7 +98,11 @@ var cmdConfig = func() *cobra.Command {
 			*cfg = config.Config{}
 			cfg.Theme = "auto"
 			cfg.ColorScheme = "auto"
-			cfg.Locale = "en"
+			// "" and not "en": an unset locale must fall back to system
+			// detection, which is what the empty value means to
+			// applyConfigLocale. Writing "en" here would pin a Chinese system
+			// to English as soon as the user ran `config reset`.
+			cfg.Locale = ""
 			cfg.TimeFormat = "auto"
 			cfg.Timezone = "auto"
 			cfg.RefreshInterval = 500
@@ -138,7 +142,21 @@ func setConfigKey(cfg *config.Config, key, val string) error {
 	case "colorscheme":
 		cfg.ColorScheme = val
 	case "locale":
-		cfg.Locale = val
+		// Reinstated. main.go's applyConfigLocale() now reads cfg.Locale after
+		// the config file is loaded (and only when that file actually carries a
+		// "locale" key), so persisting a value here changes the next
+		// invocation. Before that hook existed this case wrote a field nothing
+		// read, and the honest behaviour was to fail loudly; if the hook is ever
+		// removed again, restore that error rather than this assignment.
+		//
+		// Validated, because i18n.SetLocale normalizes anything unrecognised to
+		// "en": without the check, `config set locale fr` would print "Set
+		// locale = fr", store "fr", and then quietly run in English.
+		loc, err := normalizeLocale(val)
+		if err != nil {
+			return err
+		}
+		cfg.Locale = loc
 	case "timeformat":
 		cfg.TimeFormat = val
 	case "timezone":
@@ -651,4 +669,25 @@ func onOff(v bool) string {
 		return "on"
 	}
 	return "off"
+}
+
+// normalizeLocale validates a locale against the catalogues that actually
+// exist, and returns the canonical spelling.
+//
+// The validation is the point: i18n.SetLocale silently normalises anything it
+// does not recognise to "en", so without this check `config set locale fr`
+// would print "Set locale = fr", persist "fr", and then quietly run in
+// English -- a setting that appears to work and does not, which is the exact
+// class of defect this command had before.
+func normalizeLocale(v string) (string, error) {
+	loc := strings.ToLower(strings.TrimSpace(v))
+	if loc == "" {
+		return "", fmt.Errorf("locale must not be empty (available: %s)", strings.Join(i18n.Locales(), ", "))
+	}
+	for _, have := range i18n.Locales() {
+		if loc == have {
+			return loc, nil
+		}
+	}
+	return "", fmt.Errorf("unsupported locale %q (available: %s)", v, strings.Join(i18n.Locales(), ", "))
 }

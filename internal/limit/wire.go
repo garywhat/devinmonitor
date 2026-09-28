@@ -44,16 +44,21 @@ type WireProjection struct {
 // they are omitted when unknown; actualEndTime and usedPercent are emitted as
 // JSON null in that case.
 type WireBlock struct {
-	ID             string          `json:"id"`
-	StartTime      string          `json:"startTime"`
-	EndTime        string          `json:"endTime"`
-	ActualEndTime  *string         `json:"actualEndTime"`
-	IsActive       bool            `json:"isActive"`
-	IsGap          bool            `json:"isGap"`
-	Models         []string        `json:"models"`
-	Cost           float64         `json:"cost"`
-	Tokens         WireTokens      `json:"tokens"`
-	TotalTokens    int64           `json:"totalTokens"`
+	ID            string     `json:"id"`
+	StartTime     string     `json:"startTime"`
+	EndTime       string     `json:"endTime"`
+	ActualEndTime *string    `json:"actualEndTime"`
+	IsActive      bool       `json:"isActive"`
+	IsGap         bool       `json:"isGap"`
+	Models        []string   `json:"models"`
+	Cost          float64    `json:"cost"`
+	Tokens        WireTokens `json:"tokens"`
+	// TotalTokens is cache-inclusive (Tokens.Total()); the name means the same
+	// thing in the status snapshot, the session export and share.
+	TotalTokens int64 `json:"totalTokens"`
+	// NonCacheTokens is Tokens.NonCache(): input + output only, the tokens that
+	// represent new work rather than re-read context. It is the explicit name
+	// share now uses for the same figure.
 	NonCacheTokens int64           `json:"nonCacheTokens"`
 	UsedPercent    *float64        `json:"usedPercent"`
 	BurnRate       *WireBurnRate   `json:"burnRate,omitempty"`

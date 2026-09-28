@@ -121,6 +121,8 @@ caption { padding-bottom: .35rem; color: #4a4f57; text-align: left; font-size: .
 th, td { padding: .4rem .6rem; border: 1px solid #c9ccd2; text-align: left; vertical-align: top; }
 th { background: #eef1f4; font-weight: 600; }
 th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+span.note { color: #4a4f57; font-size: .85rem; }
+code { padding: .05rem .25rem; background: #eef1f4; border-radius: 3px; font-size: .85em; }
 footer { margin-top: 2.5rem; padding-top: .75rem; border-top: 1px solid #d0d3d9; color: #4a4f57; font-size: .85rem; }
 </style>
 </head>
@@ -139,6 +141,7 @@ footer { margin-top: 2.5rem; padding-top: .75rem; border-top: 1px solid #d0d3d9;
 <tr><th scope="row">Tokens</th><td class="num">{{tokens .Usage.TotalTokens}}</td></tr>
 <tr><th scope="row">Cost</th><td class="num">{{money .Usage.TotalCost}}</td></tr>
 <tr><th scope="row">Cost provenance</th><td>{{.Usage.CostProvenance}}</td></tr>
+<tr><th scope="row">Cost basis</th><td>{{.Usage.CostBasis}} — <span class="note">the meter this cost came from. <code>acu</code> is Devin's own action-complexity billing and <code>token_estimate</code> is our token counts × model prices; the two are different units with no conversion between them, so a figure with one basis is not comparable with a figure with the other. <code>mixed</code> means this report adds both together.</span></td></tr>
 <tr><th scope="row">Generated at</th><td>{{.GeneratedAt}}</td></tr>
 <tr><th scope="row">Schema version</th><td class="num">{{.SchemaVersion}}</td></tr>
 </tbody>
@@ -156,6 +159,7 @@ footer { margin-top: 2.5rem; padding-top: .75rem; border-top: 1px solid #d0d3d9;
 <th scope="col" class="num">Input tokens</th>
 <th scope="col" class="num">Output tokens</th>
 <th scope="col" class="num">Cost</th>
+<th scope="col">Cost basis</th>
 </tr>
 </thead>
 <tbody>
@@ -165,8 +169,9 @@ footer { margin-top: 2.5rem; padding-top: .75rem; border-top: 1px solid #d0d3d9;
 <td class="num">{{tokens .InputTokens}}</td>
 <td class="num">{{tokens .OutputTokens}}</td>
 <td class="num">{{money .Cost}}</td>
+<td>{{.CostBasis}}</td>
 </tr>
-{{else}}<tr><td colspan="5">No model usage recorded.</td></tr>
+{{else}}<tr><td colspan="6">No model usage recorded.</td></tr>
 {{end}}</tbody>
 </table>
 </section>
@@ -180,6 +185,7 @@ footer { margin-top: 2.5rem; padding-top: .75rem; border-top: 1px solid #d0d3d9;
 <th scope="col">Project</th>
 <th scope="col" class="num">Sessions</th>
 <th scope="col" class="num">Cost</th>
+<th scope="col">Cost basis</th>
 </tr>
 </thead>
 <tbody>
@@ -187,8 +193,9 @@ footer { margin-top: 2.5rem; padding-top: .75rem; border-top: 1px solid #d0d3d9;
 <td>{{.Project}}</td>
 <td class="num">{{.Sessions}}</td>
 <td class="num">{{money .Cost}}</td>
+<td>{{.CostBasis}}</td>
 </tr>
-{{else}}<tr><td colspan="3">No project usage recorded.</td></tr>
+{{else}}<tr><td colspan="4">No project usage recorded.</td></tr>
 {{end}}</tbody>
 </table>
 </section>

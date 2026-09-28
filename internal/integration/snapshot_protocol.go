@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/garywhat/devinmonitor/internal/config"
+	"github.com/garywhat/devinmonitor/internal/export"
 	"github.com/garywhat/devinmonitor/internal/limit"
 	"github.com/garywhat/devinmonitor/internal/model"
 	"github.com/garywhat/devinmonitor/internal/report"
@@ -77,6 +78,10 @@ func confidenceFrom(provenance string) status.Confidence {
 func buildProtocolSnapshot(ss []model.Session, now time.Time, opts protocolOpts, cfg *config.Config) status.Snapshot {
 	sum := computeCostSummary(ss)
 
+	// totalTokens is cache-inclusive: input + output + cacheRead + cacheWrite.
+	// That is the single meaning of the name on every JSON surface (here,
+	// blocks, the session export, share), so a consumer never has to guess
+	// whether a "total tokens" figure counts cache.
 	var totalTokens int64
 	for _, s := range ss {
 		totalTokens += s.InputTokens + s.OutputTokens + s.CacheRead + s.CacheWrite
@@ -134,12 +139,33 @@ func buildProtocolSnapshot(ss []model.Session, now time.Time, opts protocolOpts,
 		TotalTokens:    totalTokens,
 		ActiveSessions: sum.ActiveSess,
 		CostProvenance: confidenceFrom(sum.Provenance),
+		CostBasis:      costBasisFrom(ss),
 		ACU:            cfg.PlanACULimit > 0,
 		ByModel:        protocolModelRows(ss),
 		Limits:         limits,
 		StatusWindow:   statusWindow,
 		LimitHit:       limitHit,
 	})
+}
+
+// costBasisFrom names the meter behind the snapshot's cost figures.
+//
+// It is computed from the sessions rather than from the summed dollars, and it
+// uses the same predicate report.SessionCost uses to decide official vs
+// estimated, so the basis can never contradict the money it labels. This is the
+// one place the "is this an ACU figure?" question is answered for the JSON
+// protocol; export.CostBasisOfSessions answers it for the human surfaces, and
+// both go through status.CombineCostBasis, so the two cannot drift.
+//
+// The distinction that matters most here: a free-tier session has Devin's own
+// token counts but no ACU cost. That is NOT an acu figure — it is our token ×
+// price arithmetic producing 0 — so it reports token_estimate.
+func costBasisFrom(ss []model.Session) status.CostBasis {
+	bases := make([]status.CostBasis, 0, len(ss))
+	for i := range ss {
+		bases = append(bases, export.SessionCostBasis(&ss[i]))
+	}
+	return status.CombineCostBasis(bases...)
 }
 
 // upstreamWindow converts one captured upstream window into a protocol window.
@@ -283,8 +309,19 @@ func protocolModelRows(ss []model.Session) []status.ModelRow {
 	out := make([]status.ModelRow, 0, len(rows))
 	for _, r := range rows {
 		cost := r.CreditCost + r.ACUCost
-		if cost == 0 {
+		// The same split report.SessionCost makes, at row granularity: a row
+		// showing a credit/ACU figure is acu-billed, a row we had to price from
+		// tokens is token_estimate. Both can appear in one table, and the row
+		// basis is what lets a reader see that the two costs are not the same
+		// kind of quantity.
+		basis := status.CostBasisTokenEstimate
+		if cost > 0 {
+			basis = status.CostBasisACU
+		} else {
 			cost = r.EstCost
+			if r.InputTok+r.OutputTok+r.CacheRead+r.CacheWrite == 0 {
+				basis = status.CostBasisUnavailable
+			}
 		}
 		var share float64
 		if totalInOut > 0 {
@@ -298,6 +335,7 @@ func protocolModelRows(ss []model.Session) []status.ModelRow {
 			CacheWriteTokens: r.CacheWrite,
 			Requests:         r.Requests,
 			Cost:             cost,
+			CostBasis:        basis,
 			Share:            share,
 		})
 	}
