@@ -7,10 +7,25 @@
 # errors), the advertised tool/resource surface, and CLI<->MCP parity for
 # `get_blocks`.
 #
+# The server is dual-era, so the suite covers BOTH protocol generations and
+# reports a per-generation case count at the end:
+#
+#   - legacy (handshake, protocol revision 2024-11-05): `initialize`,
+#     `notifications/initialized`, `ping`, and results whose shape carries no
+#     modern fields. These are the original assertions, unchanged.
+#   - modern (stateless, protocol revision 2026-07-28): per-request `_meta`
+#     carrying the version, `server/discover`, `resultType: "complete"` on every
+#     result, `ttlMs` + `cacheScope` on list/read results, and
+#     UnsupportedProtocolVersionError (-32022) with `data.supported` on an
+#     unknown version. Methods the modern revision removed (`ping`, the
+#     `initialize` handshake) must not be served under modern semantics.
+#
 # These are end-to-end checks on purpose. The interop bugs this locks down
 # (ignoring the spec's Content-Length framing so every reply was preceded by a
-# spurious -32700; answering JSON-RPC notifications) lived in the transport
-# loop, so handler-level Go unit tests cannot catch a regression in them.
+# spurious -32700; answering JSON-RPC notifications; a modern client failing
+# because the server only spoke the removed handshake) live in the transport
+# loop and the era router, so handler-level Go unit tests cannot catch a
+# regression in them.
 #
 # Usage:
 #   bash scripts/mcp-conformance.sh [path-to-binary]
@@ -20,7 +35,9 @@
 # script, so the script works from any cwd).
 #
 # Requires bash and python3 (the JSON parser/assertion engine). Fully offline.
-# Exits 0 when every check passed (skips are not failures), 1 otherwise.
+# Exits 0 when every check passed (skips are not failures), 1 otherwise. An era
+# with zero passing cases is a failure: the point of this suite is that both
+# generations are exercised.
 set -uo pipefail
 
 # ---------------------------------------------------------------------------
@@ -45,13 +62,32 @@ fi
 # ---------------------------------------------------------------------------
 # Counters and result reporting
 # ---------------------------------------------------------------------------
+#
+# ERA tracks which protocol generation the check currently running belongs to,
+# so the summary can prove both were exercised. Cases set it at their top with
+# set_era; it defaults to legacy because that was the only era before the
+# dual-era upgrade.
+
+ERA="legacy"
+set_era() { ERA="$1"; }
 
 PASSED=0
 FAILED=0
 SKIPPED=0
 
-pass() { printf '%sPASS%s  %s\n' "$C_GREEN" "$C_RESET" "$1"; PASSED=$((PASSED + 1)); }
-skip() { printf '%sSKIP%s  %s\n' "$C_YELLOW" "$C_RESET" "$1"; SKIPPED=$((SKIPPED + 1)); }
+LEGACY_PASSED=0; LEGACY_FAILED=0; LEGACY_SKIPPED=0
+MODERN_PASSED=0; MODERN_FAILED=0; MODERN_SKIPPED=0
+
+pass() {
+  printf '%sPASS%s  %s\n' "$C_GREEN" "$C_RESET" "$1"
+  PASSED=$((PASSED + 1))
+  if [[ "$ERA" == "modern" ]]; then MODERN_PASSED=$((MODERN_PASSED + 1)); else LEGACY_PASSED=$((LEGACY_PASSED + 1)); fi
+}
+skip() {
+  printf '%sSKIP%s  %s\n' "$C_YELLOW" "$C_RESET" "$1"
+  SKIPPED=$((SKIPPED + 1))
+  if [[ "$ERA" == "modern" ]]; then MODERN_SKIPPED=$((MODERN_SKIPPED + 1)); else LEGACY_SKIPPED=$((LEGACY_SKIPPED + 1)); fi
+}
 
 # fail NAME — prints the exact request that was sent and the exact reply that
 # came back, so a failure is diagnosable without re-running anything by hand.
@@ -63,8 +99,14 @@ fail() {
     printf '        stderr:  %s\n' "$REPLY_ERR"
   fi
   FAILED=$((FAILED + 1))
+  if [[ "$ERA" == "modern" ]]; then MODERN_FAILED=$((MODERN_FAILED + 1)); else LEGACY_FAILED=$((LEGACY_FAILED + 1)); fi
   return 0
 }
+
+# MODERN_META is the per-request metadata every modern request must carry: the
+# protocol version, the client capabilities, and (SHOULD) the client identity.
+# It is spliced into the handmade `params` objects below.
+MODERN_META='"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"mcp-conformance","version":"1.0"},"io.modelcontextprotocol/clientCapabilities":{}}'
 
 # ---------------------------------------------------------------------------
 # Prerequisites
@@ -120,6 +162,9 @@ reason and exits 1 when it does not, and exits 3 to request a SKIP.
 import json
 import re
 import sys
+
+# The modern revision this server is expected to speak statelessly.
+MODERN_VERSION = "2026-07-28"
 
 
 def die(msg):
@@ -351,6 +396,133 @@ if mode == "parse_error":
     sys.exit(0)
 
 
+# ---- 13. modern era (protocol revision 2026-07-28) ------------------------
+
+def result_object(doc, what):
+    """The result object of a reply, or die explaining why there is none."""
+    need(isinstance(doc, dict), "reply is not a JSON object")
+    err = doc.get("error")
+    if isinstance(err, dict):
+        die("%s: expected a result but got error %s: %s"
+            % (what, err.get("code"), err.get("message")))
+    res = doc.get("result")
+    need(isinstance(res, dict), "%s: reply carries no result object" % what)
+    return res
+
+
+def server_info(res, what):
+    """result._meta['io.modelcontextprotocol/serverInfo'] or die."""
+    meta = res.get("_meta")
+    need(isinstance(meta, dict), "%s: result._meta is missing or not an object: %s"
+         % (what, preview(res.get("_meta"))))
+    info = meta.get("io.modelcontextprotocol/serverInfo")
+    need(isinstance(info, dict), "%s: result._meta has no serverInfo: %s"
+         % (what, preview(meta)))
+    need(info.get("name") == "devinmonitor",
+         "%s: serverInfo.name is %r, expected 'devinmonitor'" % (what, info.get("name")))
+    return info
+
+
+def caching_hints(res, what, want_scope):
+    """ttlMs/cacheScope required on cacheable modern results."""
+    ttl = res.get("ttlMs")
+    need(isinstance(ttl, int) and not isinstance(ttl, bool) and ttl >= 0,
+         "%s: result.ttlMs is %s, want an integer >= 0" % (what, preview(ttl)))
+    need(res.get("cacheScope") == want_scope,
+         "%s: result.cacheScope is %r, want %r" % (what, res.get("cacheScope"), want_scope))
+
+
+if mode == "modern_discover":
+    res = result_object(doc, "server/discover")
+    need(res.get("resultType") == "complete",
+         "server/discover: resultType is %r, want 'complete'" % res.get("resultType"))
+    versions = res.get("supportedVersions")
+    need(isinstance(versions, list) and versions,
+         "server/discover: supportedVersions is missing or empty: %s" % preview(versions))
+    need(all(isinstance(v, str) for v in versions),
+         "server/discover: supportedVersions is not a list of strings: %s" % preview(versions))
+    need(MODERN_VERSION in versions,
+         "server/discover: supportedVersions %s does not include %s" % (versions, MODERN_VERSION))
+    caps = res.get("capabilities")
+    need(isinstance(caps, dict), "server/discover: capabilities is missing or not an object")
+    for want in ("tools", "resources"):
+        need(want in caps, "server/discover: capabilities has no %r" % want)
+    server_info(res, "server/discover")
+    caching_hints(res, "server/discover", "public")
+    instr = res.get("instructions")
+    need(isinstance(instr, str) and instr.strip() != "",
+         "server/discover: instructions is missing or empty")
+    sys.exit(0)
+
+
+if mode == "modern_result":
+    # extra[0] is the expected cacheScope; the caller checked the method's own
+    # fields separately (tools_list, resources_list, resource_read).
+    want_scope = extra[0]
+    res = result_object(doc, "modern result")
+    need(res.get("resultType") == "complete",
+         "modern result: resultType is %r, want 'complete'" % res.get("resultType"))
+    server_info(res, "modern result")
+    caching_hints(res, "modern result", want_scope)
+    sys.exit(0)
+
+
+if mode == "modern_result_uncached":
+    # tools/call results embed live usage data: resultType yes, cache hints no.
+    res = result_object(doc, "modern tools/call")
+    need(res.get("resultType") == "complete",
+         "modern tools/call: resultType is %r, want 'complete'" % res.get("resultType"))
+    server_info(res, "modern tools/call")
+    for key in ("ttlMs", "cacheScope"):
+        need(key not in res, "modern tools/call: tool results must not carry %r" % key)
+    sys.exit(0)
+
+
+if mode == "legacy_shape":
+    # A reply served under the negotiated legacy revision must keep the exact
+    # shape legacy clients saw before the dual-era upgrade.
+    res = result_object(doc, "legacy result")
+    for key in ("resultType", "ttlMs", "cacheScope", "_meta"):
+        need(key not in res, "legacy result carries modern field %r: %s" % (key, preview(res)))
+    sys.exit(0)
+
+
+if mode == "unsupported_version":
+    need(isinstance(doc, dict), "reply is not a JSON object")
+    need("result" not in doc,
+         "expected UnsupportedProtocolVersionError but got a result: %s" % preview(doc))
+    err = doc.get("error")
+    need(isinstance(err, dict), "no error object in reply: %s" % preview(doc))
+    need(err.get("code") == -32022,
+         "error code is %s, want -32022 (UnsupportedProtocolVersion)" % err.get("code"))
+    data = err.get("data")
+    need(isinstance(data, dict), "error.data is missing or not an object: %s" % preview(err))
+    supported = data.get("supported")
+    need(isinstance(supported, list) and supported,
+         "error.data.supported is missing or empty: %s" % preview(supported))
+    need(MODERN_VERSION in supported,
+         "error.data.supported %s does not include %s" % (supported, MODERN_VERSION))
+    if extra:
+        need(data.get("requested") == extra[0],
+             "error.data.requested is %r, expected %r" % (data.get("requested"), extra[0]))
+    sys.exit(0)
+
+
+if mode == "method_not_found":
+    need(isinstance(doc, dict), "reply is not a JSON object")
+    need("result" not in doc,
+         "expected -32601 but the reply carried a result: %s" % preview(doc))
+    err = doc.get("error")
+    need(isinstance(err, dict), "no error object in reply: %s" % preview(doc))
+    need(err.get("code") == -32601,
+         "error code is %s, want -32601 (Method not found)" % err.get("code"))
+    if extra:
+        message = str(err.get("message", ""))
+        need(re.search(r"\b%s\b" % re.escape(extra[0]), message, re.IGNORECASE),
+             "error message does not name the removed method %r: %r" % (extra[0], message))
+    sys.exit(0)
+
+
 # ---- 14. CLI <-> MCP parity for get_blocks --------------------------------
 
 if mode == "blocks_keys":
@@ -460,6 +632,16 @@ check() {
       printf '        reason:  %s\n' "$reason"
     fi
   fi
+}
+
+# check_nth NAME N MODE [ARGS...] — like check, but asserts the Nth reply line
+# of a multi-message stream (used by the both-eras-on-one-stream case).
+check_nth() {
+  local name="$1" n="$2"; shift 2
+  local saved="$REPLY_OUT"
+  REPLY_OUT="$(printf '%s\n' "$saved" | sed -n "${n}p")"
+  check "$name" "$@"
+  REPLY_OUT="$saved"
 }
 
 # ---------------------------------------------------------------------------
@@ -584,9 +766,101 @@ case_get_blocks_parity() {
 }
 
 # ---------------------------------------------------------------------------
+# Modern-era cases (protocol revision 2026-07-28)
+# ---------------------------------------------------------------------------
+#
+# Every request below carries its protocol version in `_meta`; none of them
+# performs the removed `initialize` handshake. `server/discover` must answer
+# even as the first message on the stream, because it is the probe a dual-era
+# client uses to detect that this server is modern rather than legacy.
+
+case_modern_discover() {
+  invoke "{\"jsonrpc\":\"2.0\",\"id\":50,\"method\":\"server/discover\",\"params\":{$MODERN_META}}"
+  check "modern server/discover (first message, no handshake): supportedVersions, capabilities, serverInfo, ttlMs/cacheScope" modern_discover
+}
+
+case_modern_no_handshake() {
+  invoke "{\"jsonrpc\":\"2.0\",\"id\":51,\"method\":\"tools/list\",\"params\":{$MODERN_META}}"
+  check "modern tools/list as the first message: resultType + serverInfo + public cache hints" modern_result public
+  check "modern tools/list: all eight tools present, every inputSchema.type == object" tools_list
+}
+
+case_modern_tool_call() {
+  invoke "{\"jsonrpc\":\"2.0\",\"id\":52,\"method\":\"tools/call\",\"params\":{\"name\":\"get_cost_summary\",\"arguments\":{},$MODERN_META}}"
+  check "modern tools/call without handshake: resultType + serverInfo, no cache hints" modern_result_uncached
+  check "modern tools/call get_cost_summary: content[0].text parses as JSON" tool_content get_cost_summary
+}
+
+case_modern_resources() {
+  invoke "{\"jsonrpc\":\"2.0\",\"id\":53,\"method\":\"resources/list\",\"params\":{$MODERN_META}}"
+  check "modern resources/list: resultType + serverInfo + public cache hints" modern_result public
+  check "modern resources/list: exactly the four URIs, each with a non-empty name" resources_list
+
+  invoke "{\"jsonrpc\":\"2.0\",\"id\":54,\"method\":\"resources/read\",\"params\":{\"uri\":\"devinmonitor://summary\",$MODERN_META}}"
+  check "modern resources/read: resultType + serverInfo + private cache hints" modern_result private
+  check "modern resources/read devinmonitor://summary: uri echoed, non-empty text, no ANSI escape, no tab" resource_read devinmonitor://summary
+}
+
+case_modern_unsupported_version() {
+  invoke "{\"jsonrpc\":\"2.0\",\"id\":55,\"method\":\"tools/list\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"1900-01-01\",\"io.modelcontextprotocol/clientCapabilities\":{}}}}"
+  check "modern unknown protocol version: -32022 UnsupportedProtocolVersion with data.supported + data.requested" unsupported_version 1900-01-01
+
+  # A recognised modern error is exactly what tells a dual-era client NOT to
+  # fall back to the legacy handshake.
+  invoke "{\"jsonrpc\":\"2.0\",\"id\":56,\"method\":\"server/discover\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2025-11-25\",\"io.modelcontextprotocol/clientCapabilities\":{}}}}"
+  check "modern server/discover probe with an unsupported version: -32022 (recognised modern error, no legacy fallback)" unsupported_version 2025-11-25
+}
+
+case_modern_malformed_meta() {
+  invoke '{"jsonrpc":"2.0","id":57,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":20260728}}}'
+  check "modern _meta.protocolVersion that is not a string: -32602 Invalid params" error -32602
+
+  # The legacy revision also has a `_meta` (progressToken), so only the modern
+  # protocol-version key may switch a request to modern semantics.
+  invoke '{"jsonrpc":"2.0","id":58,"method":"tools/list","params":{"_meta":{"progressToken":"legacy-token"}}}'
+  check "legacy _meta (progressToken only) is not modern: legacy-shaped tools/list" legacy_shape
+}
+
+case_modern_removed_methods() {
+  invoke "{\"jsonrpc\":\"2.0\",\"id\":59,\"method\":\"ping\",\"params\":{$MODERN_META}}"
+  check "modern ping: removed in 2026-07-28, so -32601 (not served as era-ambiguous legacy)" method_not_found ping
+
+  # `initialize` selects legacy semantics whatever else the message carries, so
+  # a legacy-style client still gets the handshake it can use.
+  invoke '{"jsonrpc":"2.0","id":60,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"mcp-conformance","version":"1.0"}}}'
+  check "initialize still selects legacy semantics (dual-era rule): handshake result" initialize
+  check "initialize still selects legacy semantics: no modern resultType on the handshake result" legacy_shape
+}
+
+# The two generations must be independent on one connection: answering the
+# handshake must not lock the process into legacy semantics, and a modern
+# request must not disturb a later legacy one.
+case_both_eras_one_stream() {
+  local init='{"jsonrpc":"2.0","id":61,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"mcp-conformance","version":"1.0"}}}'
+  local modern="{\"jsonrpc\":\"2.0\",\"id\":62,\"method\":\"tools/list\",\"params\":{$MODERN_META}}"
+  REQ="$init || $modern"
+  { send "$init"; send "$modern"; } > "$TMP/in.txt"
+  capture
+
+  if [[ "$REPLY_LINES" != "2" ]]; then
+    fail "both eras on one stream: initialize + modern tools/list yield exactly 2 replies (got $REPLY_LINES)"
+    return
+  fi
+
+  set_era legacy
+  check_nth "both eras on one stream: reply 1 (initialize) keeps the legacy shape" 1 legacy_shape
+  set_era modern
+  check_nth "both eras on one stream: reply 2 (modern _meta) carries resultType + public cache hints" 2 modern_result public
+}
+
+# ---------------------------------------------------------------------------
 # Run
 # ---------------------------------------------------------------------------
+#
+# Era is assigned here, per case, so the summary can prove both generations
+# were exercised. The legacy block is the original suite, unchanged.
 
+set_era legacy
 case_initialize
 case_framing
 case_tools_list
@@ -602,6 +876,16 @@ case_malformed_json
 case_ndjson_fallback
 case_get_blocks_parity
 
+set_era modern
+case_modern_discover
+case_modern_no_handshake
+case_modern_tool_call
+case_modern_resources
+case_modern_unsupported_version
+case_modern_malformed_meta
+case_modern_removed_methods
+case_both_eras_one_stream
+
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
@@ -609,6 +893,18 @@ case_get_blocks_parity
 printf '\n%d passed / %d failed\n' "$PASSED" "$FAILED"
 if [[ $SKIPPED -gt 0 ]]; then
   printf '%d skipped\n' "$SKIPPED"
+fi
+
+printf 'era coverage — legacy (handshake, %s): %d passed / %d failed / %d skipped\n' \
+  "2024-11-05" "$LEGACY_PASSED" "$LEGACY_FAILED" "$LEGACY_SKIPPED"
+printf 'era coverage — modern (per-request _meta, %s): %d passed / %d failed / %d skipped\n' \
+  "2026-07-28" "$MODERN_PASSED" "$MODERN_FAILED" "$MODERN_SKIPPED"
+
+# A suite that only exercised one generation cannot demonstrate dual-era
+# support, so zero passing cases in either era is a failure of the suite itself.
+if [[ $LEGACY_PASSED -eq 0 || $MODERN_PASSED -eq 0 ]]; then
+  printf '%sFAIL%s  era coverage: both generations must have at least one passing case\n' "$C_RED" "$C_RESET"
+  FAILED=$((FAILED + 1))
 fi
 
 if [[ $FAILED -gt 0 ]]; then
