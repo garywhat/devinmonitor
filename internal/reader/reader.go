@@ -72,6 +72,25 @@ type Reader interface {
 	Close() error
 }
 
+// TranscriptSource is implemented by readers that read Devin's transcripts
+// directory as well as sessions.db.
+//
+// It is a separate interface rather than a method on Reader because it is
+// optional: a reader over a test double, or over a database with no transcripts
+// beside it, has nothing to report. A caller that wants to tell the user how
+// much history came from the second source asserts for it, exactly as the
+// subagent-head reader does.
+type TranscriptSource interface {
+	// TranscriptRecovery reports how many sessions the last Sessions() call
+	// recovered from transcripts, how many files were unusable, and any error
+	// that stopped the directory being read at all.
+	//
+	// The skipped count exists because a bad file is deliberately not fatal --
+	// which is also how the whole second source once vanished unnoticed. A
+	// caller that ignores it is choosing silence, not safety.
+	TranscriptRecovery() (recovered, skipped int, err error)
+}
+
 // Open auto-detects the DB path and returns a Reader for the current schema.
 // dataDir overrides the auto-detected directory when non-empty.
 func Open(dataDir string) (Reader, error) {

@@ -45,59 +45,18 @@ func (r *v1Reader) SearchMessages(query string, limit int) ([]model.SearchResult
 	return out, rows.Err()
 }
 
-// PromptHistory returns the prompt history for a session (or all if sessionID is empty).
-func (r *v1Reader) PromptHistory(sessionID string) ([]model.PromptHistoryEntry, error) {
-	q := `SELECT id, content, timestamp, session_id, is_shell FROM prompt_history`
-	args := []interface{}{}
-	if sessionID != "" {
-		q += ` WHERE session_id = ?`
-		args = append(args, sessionID)
-	}
-	q += ` ORDER BY timestamp ASC`
-	rows, err := r.db.Query(q, args...)
-	if err != nil {
-		return nil, fmt.Errorf("prompt history: %w", err)
-	}
-	defer rows.Close()
-
-	var out []model.PromptHistoryEntry
-	for rows.Next() {
-		var e model.PromptHistoryEntry
-		var ts int64
-		if err := rows.Scan(&e.ID, &e.Content, &ts, &e.SessionID, &e.IsShell); err != nil {
-			return nil, err
-		}
-		e.Timestamp = tsToTime(ts)
-		out = append(out, e)
-	}
-	return out, rows.Err()
-}
-
-// RenderedCommits returns rendered commit HTML for a session.
-func (r *v1Reader) RenderedCommits(sessionID string) ([]model.RenderedCommit, error) {
-	rows, err := r.db.Query(`
-		SELECT id, session_id, sequence_number, rendered_html, created_at
-		FROM rendered_commits WHERE session_id = ?
-		ORDER BY sequence_number ASC`, sessionID)
-	if err != nil {
-		return nil, fmt.Errorf("rendered commits: %w", err)
-	}
-	defer rows.Close()
-
-	var out []model.RenderedCommit
-	for rows.Next() {
-		var rc model.RenderedCommit
-		var ts int64
-		if err := rows.Scan(&rc.ID, &rc.SessionID, &rc.SequenceNumber, &rc.HTML, &ts); err != nil {
-			return nil, err
-		}
-		rc.CreatedAt = tsToTime(ts)
-		out = append(out, rc)
-	}
-	return out, rows.Err()
-}
-
 // ToolCallStates returns tool call state records for a session.
+//
+// CURRENTLY UNUSED. Kept deliberately rather than deleted as dead code: it is
+// the only route to the tool_call_state table, which holds per-tool-call
+// execution telemetry — the tool call JSON, the update JSON and, crucially, the
+// status that separates success from failure. On the reference database that is
+// 7,931 rows, 224 of them status=failed, and the failed ones are exactly what a
+// "why did this session's tools break?" report would need. The chat transcript
+// in message_nodes is a different record and does not carry that status.
+//
+// If a future report adopts this method, delete this note. If the table turns
+// out to be produced by nothing, delete the method.
 func (r *v1Reader) ToolCallStates(sessionID string) ([]model.ToolCallStateEntry, error) {
 	rows, err := r.db.Query(`
 		SELECT session_id, tool_call_id, tool_call_json, tool_call_update_json
@@ -116,39 +75,6 @@ func (r *v1Reader) ToolCallStates(sessionID string) ([]model.ToolCallStateEntry,
 		out = append(out, e)
 	}
 	return out, rows.Err()
-}
-
-// AppState returns all app_state key-value pairs.
-func (r *v1Reader) AppState() (map[string]string, error) {
-	rows, err := r.db.Query(`SELECT key, value FROM app_state`)
-	if err != nil {
-		return nil, fmt.Errorf("app state: %w", err)
-	}
-	defer rows.Close()
-
-	out := map[string]string{}
-	for rows.Next() {
-		var k, v string
-		if err := rows.Scan(&k, &v); err != nil {
-			return nil, err
-		}
-		out[k] = v
-	}
-	return out, rows.Err()
-}
-
-// SessionCount returns the total number of non-hidden sessions.
-func (r *v1Reader) SessionCount() (int, error) {
-	var n int
-	err := r.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE hidden = 0`).Scan(&n)
-	return n, err
-}
-
-// MessageCount returns the total number of messages across all sessions.
-func (r *v1Reader) MessageCount() (int, error) {
-	var n int
-	err := r.db.QueryRow(`SELECT COUNT(*) FROM message_nodes`).Scan(&n)
-	return n, err
 }
 
 // FilteredSessions returns sessions matching the given filter options.

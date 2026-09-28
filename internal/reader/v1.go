@@ -21,6 +21,11 @@ type v1Reader struct {
 	db   *sql.DB
 	path string
 	ver  int
+	// Counts from the last Sessions() call, so a caller can say how much of the
+	// history came from the second source and whether anything was unreadable.
+	recoveredFromTranscripts int
+	skippedTranscripts       int
+	transcriptErr            error
 }
 
 func newV1Reader(path string, ver int) (*v1Reader, error) {
@@ -107,6 +112,53 @@ type metrics struct {
 type sessionMetadata struct {
 	TotalCreditCost float64 `json:"total_credit_cost"`
 	TotalACUCost    float64 `json:"total_acu_cost"`
+	// ResponseDimensions is Devin's own accounting for the session -- the same
+	// figures its CLI's /session-stats prints. It was in a column we already
+	// read and we ignored it, which is how our token totals stayed 2-3x too
+	// high without anyone noticing. It is parsed now so a report can be
+	// cross-checked against the vendor instead of trusted on its own.
+	ResponseDimensions []struct {
+		UID  string `json:"uid"`
+		Kind struct {
+			Metric           *dimMetric `json:"Metric"`
+			CumulativeMetric *dimMetric `json:"CumulativeMetric"`
+		} `json:"kind"`
+	} `json:"response_dimensions"`
+}
+
+// dimMetric is one value inside a response dimension. Devin wraps numeric
+// metrics and string labels in the same shape, so both fields are read.
+type dimMetric struct {
+	Label string  `json:"label"`
+	Value float64 `json:"value"`
+	Text  string  `json:"text"`
+}
+
+// ResponseDimension is one of Devin's own reported figures for a session.
+type ResponseDimension struct {
+	UID   string
+	Label string
+	Value float64
+	Text  string
+}
+
+// ResponseDimensions flattens Devin's per-session accounting.
+func (m *sessionMetadata) Dimensions() []ResponseDimension {
+	if m == nil {
+		return nil
+	}
+	out := make([]ResponseDimension, 0, len(m.ResponseDimensions))
+	for _, d := range m.ResponseDimensions {
+		k := d.Kind.CumulativeMetric
+		if k == nil {
+			k = d.Kind.Metric
+		}
+		if k == nil {
+			continue
+		}
+		out = append(out, ResponseDimension{UID: d.UID, Label: k.Label, Value: k.Value, Text: k.Text})
+	}
+	return out
 }
 
 // ---- Sessions ----
@@ -140,6 +192,7 @@ func (r *v1Reader) Sessions() ([]model.Session, error) {
 		}
 		s.CreditCost = sm.TotalCreditCost
 		s.ACUCost = sm.TotalACUCost
+		s.VendorDimensions = toVendorDimensions(sm.Dimensions())
 		// Skip hidden/deleted sessions so every consumer of Sessions() sees
 		// consistent totals and lists. This matches FilteredSessions and
 		// SessionCount, which already exclude hidden rows. Direct lookup via
@@ -161,6 +214,27 @@ func (r *v1Reader) Sessions() ([]model.Session, error) {
 		}
 		out[i].Messages = msgs
 		aggregate(&out[i])
+	}
+
+	// Second source: transcripts.
+	//
+	// Devin prunes sessions.db and keeps transcripts/*.json, so reading only
+	// the database hid 11 of 18 sessions on the machine this was measured
+	// against. Database rows win on a conflict -- they are finer-grained (per
+	// request rather than per step) and carry the ACU accounting -- and a
+	// transcript is used only for a session the database no longer has.
+	ts, skipped, terr := loadTranscriptSessions(transcriptDirFor(r.path))
+	if terr != nil {
+		// A broken transcripts directory must not fail the report -- the
+		// database is the primary source -- but it must not be swallowed
+		// either: going quiet here is how "we read half the history" becomes
+		// invisible. The error is kept so a caller can surface it.
+		r.transcriptErr = terr
+	} else {
+		merged, recovered := mergeTranscriptSessions(out, ts)
+		out = merged
+		r.recoveredFromTranscripts = recovered
+		r.skippedTranscripts = skipped
 	}
 	return out, nil
 }
@@ -188,6 +262,7 @@ func (r *v1Reader) Session(id string) (*model.Session, error) {
 	}
 	s.CreditCost = sm.TotalCreditCost
 	s.ACUCost = sm.TotalACUCost
+	s.VendorDimensions = toVendorDimensions(sm.Dimensions())
 
 	msgs, err := r.loadMessages(id)
 	if err != nil {
@@ -215,9 +290,8 @@ func (r *v1Reader) loadMessages(sessionID string) ([]model.Message, error) {
 		if err := rows.Scan(&m.NodeID, &raw, &createdAt); err != nil {
 			return nil, fmt.Errorf("scan message: %w", err)
 		}
-		// created_at in message_nodes is seconds since epoch (matches the
-		// sessions table). The tsToTime helper in extensions.go handles other
-		// tables' timestamps that may be stored in seconds/ms/ns.
+		// Provisional: the message_nodes.created_at COLUMN. It is overwritten
+		// below by the message's own timestamp when the JSON carries one.
 		m.CreatedAt = time.Unix(createdAt, 0)
 
 		var cm chatMessage
@@ -228,7 +302,20 @@ func (r *v1Reader) loadMessages(sessionID string) ([]model.Message, error) {
 		m.Content = cm.Content
 		m.ToolCallID = cm.ToolCallID
 		if cm.Metadata != nil {
+			// The message's own timestamp, and the authoritative one.
+			//
+			// The created_at COLUMN is a batch write time: this database has
+			// 48,254 rows sharing only 57 distinct values, one covering 16,371
+			// rows. Bucketing by it put 60% of all tokens on the wrong day and
+			// erased whole days from the daily/weekly/monthly reports. The
+			// JSON value is per-message (tens of thousands of distinct values)
+			// and covers every row, so it wins; the column stays only as a
+			// fallback for a row that omitted it.
+			if t, ok := parseRFC3339(cm.Metadata.CreatedAt); ok {
+				m.CreatedAt = t
+			}
 			m.RequestID = cm.Metadata.RequestID
+			m.MessageID = cm.MessageID
 			m.FinishReason = cm.Metadata.FinishReason
 			m.GenerationModel = cm.Metadata.GenerationModel
 			if cm.Metadata.NumTokensPreceding != nil {
@@ -254,6 +341,31 @@ func (r *v1Reader) loadMessages(sessionID string) ([]model.Message, error) {
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+// parseRFC3339 parses the timestamp Devin writes inside a message's metadata,
+// e.g. "2026-08-31T03:29:15.685135Z".
+func parseRFC3339(s string) (time.Time, bool) {
+	if s == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+// toVendorDimensions converts the reader's parse shape into the model's.
+func toVendorDimensions(in []ResponseDimension) []model.VendorDimension {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]model.VendorDimension, 0, len(in))
+	for _, d := range in {
+		out = append(out, model.VendorDimension{UID: d.UID, Label: d.Label, Value: d.Value, Text: d.Text})
+	}
+	return out
 }
 
 func decodeMetrics(m *metrics) *model.Metrics {
@@ -316,20 +428,53 @@ func aggregate(s *model.Session) {
 	}
 
 	// Second pass: aggregate assistant messages.
+	//
 	// Deduplicate run_subagent and read_subagent calls by tool_call_id
 	// (Devin stores each assistant message twice: streaming + final).
 	seenSubAgent := map[string]bool{}
 	seenReadSubAgent := map[string]bool{}
+	// Deduplicate the request itself, for exactly the same reason.
+	//
+	// The tool-call dedup above has always been here, but the METRICS were
+	// summed from every node -- and Devin writes 2-3 nodes per request, each
+	// carrying an identical copy of the metrics object. Measured against
+	// Devin's own response_dimensions, that inflated every token total by
+	// 2.00x-3.42x (e.g. one session read 169.6M where Devin reports 49.6M).
+	// Counting each request once brings us back to 1.00x on the sessions where
+	// compaction is excluded.
+	//
+	// The key is the message id, falling back to the request id and finally to
+	// the node, so a row that lacks both still counts exactly once.
+	seenRequest := map[string]bool{}
 	for _, m := range s.Messages {
 		if m.Role != "assistant" {
 			continue
 		}
-		s.AssistantCount++
-		if m.Metrics != nil {
-			s.InputTokens += m.Metrics.InputTokens
-			s.OutputTokens += m.Metrics.OutputTokens
-			s.CacheRead += m.Metrics.CacheReadTokens
-			s.CacheWrite += m.Metrics.CacheWriteTokens
+		key := m.MessageID
+		if key == "" {
+			key = m.RequestID
+		}
+		if key == "" {
+			key = "node:" + strconv.Itoa(m.NodeID)
+		}
+		if !seenRequest[key] {
+			seenRequest[key] = true
+			s.AssistantCount++
+			if m.Metrics != nil {
+				s.InputTokens += m.Metrics.InputTokens
+				s.OutputTokens += m.Metrics.OutputTokens
+				s.CacheRead += m.Metrics.CacheReadTokens
+				s.CacheWrite += m.Metrics.CacheWriteTokens
+				// Compaction is billed but excluded from Devin's own
+				// per-session accounting, so track it separately. Both
+				// numbers are real; see model.CompactionUsage.
+				if model.IsCompactorModel(m.GenerationModel) {
+					s.Compaction.InputTokens += m.Metrics.InputTokens
+					s.Compaction.OutputTokens += m.Metrics.OutputTokens
+					s.Compaction.CacheRead += m.Metrics.CacheReadTokens
+					s.Compaction.CacheWrite += m.Metrics.CacheWriteTokens
+				}
+			}
 		}
 		for _, tc := range m.ToolCalls {
 			s.ToolCalls[tc.Name]++

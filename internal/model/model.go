@@ -4,9 +4,91 @@
 // the reader layer can adapt to schema changes without touching reports/UI.
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Session is a normalized Devin CLI session.
+// VendorDimension is one figure Devin reports for a session.
+type VendorDimension struct {
+	UID   string // e.g. "input_tokens", "agent_messages", "model"
+	Label string // human label as Devin writes it, e.g. "Input tokens"
+	Value float64
+	Text  string // set instead of Value for string-valued dimensions
+}
+
+// VendorDimensionValue returns a numeric dimension by uid, and whether it was
+// present. A missing dimension is normal: the field is populated asynchronously
+// by Devin, so a session still running may not have it yet.
+func (s *Session) VendorDimensionValue(uid string) (float64, bool) {
+	for _, d := range s.VendorDimensions {
+		if d.UID == uid {
+			return d.Value, true
+		}
+	}
+	return 0, false
+}
+
+// CompactionUsage is the token volume attributable to context compaction.
+//
+// Compaction is a system operation -- Devin re-summarises the conversation to
+// stay inside the context window -- and it is billed in tokens like anything
+// else, but Devin's own per-session accounting (metadata.response_dimensions)
+// EXCLUDES it. Measured on the real database: counting compaction put us 1.082x
+// and 1.208x above Devin's figures on two sessions, and removing it matched
+// both exactly.
+//
+// So both numbers are real and they answer different questions: the raw totals
+// say what the session consumed, and (totals - compaction) says what Devin
+// attributes to the agent. They are kept apart rather than collapsed, because
+// silently picking one would make our numbers disagree with the bill for no
+// visible reason.
+type CompactionUsage struct {
+	InputTokens  int64
+	OutputTokens int64
+	CacheRead    int64
+	CacheWrite   int64
+}
+
+// IsCompactorModel reports whether a generation model is Devin's compactor
+// rather than an agent model.
+func IsCompactorModel(name string) bool {
+	return strings.Contains(strings.ToLower(name), "compact")
+}
+
+// TokenTotal returns this session's total tokens, cache included.
+func (s *Session) TokenTotal() int64 {
+	return s.InputTokens + s.OutputTokens + s.CacheRead + s.CacheWrite
+}
+
+// BillableTokenTotal returns the total tokens excluding compaction, i.e. the
+// quantity Devin's own response_dimensions reports.
+func (s *Session) BillableTokenTotal() int64 {
+	return s.TokenTotal() - s.Compaction.Total()
+}
+
+// Total returns the compaction token volume.
+func (c CompactionUsage) Total() int64 {
+	return c.InputTokens + c.OutputTokens + c.CacheRead + c.CacheWrite
+}
+
+// SessionSource identifies which local record a session was read from.
+type SessionSource string
+
+const (
+	// SourceSessionsDB is Devin's sessions.db: per-message metrics, latency,
+	// finish reasons, tool calls and the ACU/credit accounting.
+	SourceSessionsDB SessionSource = "sessions_db"
+	// SourceTranscript is Devin's transcripts/<id>.json (ATIF): the only record
+	// that survives once sessions.db has been pruned. It has per-STEP metrics
+	// and timestamps but no cost accounting.
+	SourceTranscript SessionSource = "transcript"
+)
+
+// String makes the source printable.
+func (s SessionSource) String() string { return string(s) }
+
 type Session struct {
 	ID             string
 	WorkingDir     string
@@ -19,17 +101,35 @@ type Session struct {
 	MainChainID    int
 	Hidden         bool
 	WorkspaceDirs  []string
+	// Source names where this session was read from.
+	//
+	// Devin prunes sessions.db but keeps transcripts/*.json, so a session can
+	// survive only in the transcript. Those rows carry different and coarser
+	// numbers (per-step rather than per-request, and no ACU cost at all), so
+	// every consumer must be able to tell them apart rather than blending them
+	// into one column.
+	Source SessionSource
 	// Cost from Devin's own accounting (authoritative when non-zero).
 	CreditCost float64
 	ACUCost    float64
 	// Aggregated from assistant messages.
-	Messages       []Message
-	InputTokens    int64
-	OutputTokens   int64
-	CacheRead      int64
-	CacheWrite     int64
-	ToolCalls      map[string]int // tool name -> count
-	AssistantCount int            // number of assistant turns (= requests)
+	Messages     []Message
+	InputTokens  int64
+	OutputTokens int64
+	CacheRead    int64
+	CacheWrite   int64
+	// Compaction is the share of the totals above produced by Devin's
+	// context-compaction passes rather than by the agent's own work.
+	// Subtracting it yields the figure Devin's own accounting reports.
+	Compaction CompactionUsage
+	// VendorDimensions is Devin's OWN accounting for this session, from
+	// metadata.response_dimensions -- the numbers its CLI's /session-stats
+	// prints. It is the only offline cross-check for our totals, so it is
+	// carried rather than discarded: a report can show both, and a test can
+	// assert they agree instead of trusting ours on its own.
+	VendorDimensions []VendorDimension
+	ToolCalls        map[string]int // tool name -> count
+	AssistantCount   int            // number of assistant turns (= requests)
 	// LatestModel is the generation_model from the most recent assistant
 	// message. More accurate than the session-level Model field (which is
 	// set at creation time and doesn't update when the user switches models).
@@ -49,9 +149,14 @@ type Message struct {
 	CreatedAt  time.Time
 	ToolCallID string // for role=tool messages: the tool_call_id this result belongs to
 	// Assistant-only fields (zero for other roles).
-	Metrics            *Metrics
-	FinishReason       string
-	GenerationModel    string
+	Metrics         *Metrics
+	FinishReason    string
+	GenerationModel string
+	// MessageID and RequestID identify the request this message belongs to.
+	// Devin writes 2-3 message nodes per request -- each carrying an identical
+	// copy of the metrics -- so both are needed to count a request once. See
+	// the dedup in the reader's aggregation.
+	MessageID          string
 	RequestID          string
 	ToolCalls          []ToolCall
 	NumTokensPreceding int // context size at this point (if available)

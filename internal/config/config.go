@@ -103,9 +103,15 @@ func Path() string {
 // Load reads the config file. Returns a zero-value Config if file is missing.
 func Load() *Config {
 	cfg := &Config{
-		Theme:           "auto",
-		ColorScheme:     "auto",
-		Locale:          "en",
+		Theme:       "auto",
+		ColorScheme: "auto",
+		// Locale is deliberately NOT seeded. SaveGlobal marshals the whole
+		// struct, so a seeded default would be written to disk as if the user
+		// had chosen it -- and `config set <anything>` was enough to do it.
+		// applyConfigLocale() then saw a "locale" key it had not been given and
+		// let it outrank system detection, silently switching a Chinese system
+		// to English. Leaving it empty means "unset", which is what the hook
+		// already checks for.
 		TimeFormat:      "auto",
 		Timezone:        "auto",
 		RefreshInterval: 500,
