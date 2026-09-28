@@ -6,8 +6,13 @@ dashboard and machine-readable surfaces.
 
 ## Source of truth
 
-**The local `sessions.db` is the only input** — an invariant, not a default: no
-report, snapshot or export is assembled elsewhere, and no network call supplies data.
+**The local `sessions.db` is the only source ingested today** — reads are
+local-only, not just by default: no report, snapshot or export is assembled
+elsewhere, and no network call supplies data. Devin CLI also writes
+`transcripts/*.json` (ATIF-v1.7 trajectories carrying `final_metrics` and
+per-step `steps`) and Devin Desktop can emit ACP event streams; **neither is
+read yet**. They are candidate future sources behind the `reader` interface, so
+every figure this version prints reflects `sessions.db` and nothing else.
 
 - Resolution is `--data-dir` > `DEVIN_DATA_DIR` > platform defaults, and an
   explicit `--data-dir` is authoritative (`internal/reader/reader.go`).
@@ -27,6 +32,8 @@ Every surface is a **projection of that one source**:
 | Realtime dashboard | 4-tier responsive TUI | `internal/live` |
 | Machine snapshot | `snapshot --json` (`schemaVersion: 1`) | `internal/status` |
 | MCP resources | `devinmonitor://summary`, `://models`, `://blocks`, `://alerts` | `internal/integration/mcp_resources.go` |
+| Local web dashboard | read-only HTTP pinned to `127.0.0.1`, SSE live updates, no upload path | `internal/integration/web.go` |
+| Sanitised share artifact | aggregate-only JSON or self-contained zero-JS HTML plus the redaction manifest | `internal/share` |
 | State file | `<config dir>/state/latest.json` | `internal/state/state.go` |
 
 ## Brand
@@ -35,7 +42,13 @@ Every surface is a **projection of that one source**:
   (`internal/i18n/en.toml`, `app.tagline`).
 - **Position**: a companion instrument for a tool the user already runs, adding
   the Devin-specific metrics other monitors miss — TTFT, tokens/sec,
-  finish-reason distribution, context growth, sub-agent usage (`README.md`).
+  finish-reason distribution, context growth, sub-agent usage. Named competitor
+  contrasts, each with a URL, live in `README.md` § *How this compares*, which
+  also states the acknowledged gaps (multi-agent breadth, transcript ingestion).
+- **Local-only boundary**: `web` binds `127.0.0.1` and renders unsanitised local
+  data (project paths, titles, session IDs) for the user's own screen, while
+  `share --format html` writes the sanitised artifact that may leave the
+  machine. Upload, hosted sharing and public leaderboards are non-goals.
 - **Character**: dense and technical; it shows numbers and labels estimates.
 
 ## Product goals
@@ -70,7 +83,8 @@ over MCP resources.
 
 Commands **self-register** through `cli.Register`, then are ordered explicitly by
 `buildOrderedCommands()` with `cobra.EnableCommandSorting = false`, so `--help`
-shows the intended grouping (`main.go`). 58 commands sit in 12 groups:
+shows the intended grouping (`main.go`). 60 commands sit in 12 groups (cobra's
+own `help` and `completion` are excluded from the count):
 
 | Group | Commands |
 |---|---|
@@ -78,11 +92,11 @@ shows the intended grouping (`main.go`). 58 commands sit in 12 groups:
 | Sessions | `session`, `sessions`, `filter`, `search` |
 | Time reports | `weekly`, `monthly`, `daily`, `24h` |
 | Cost & budget | `cost`, `budget`, `burn-rate`, `projection`, `top-cost`, `plan`, `currency`, `blocks` |
-| Analytics | `cache`, `efficiency`, `tasks`, `optimize`, `compaction`, `context`, `analytics`, `model-compare`, `yield` |
+| Analytics | `cache`, `efficiency`, `tasks`, `optimize`, `compaction`, `context`, `analytics`, `model-compare`, `yield`, `errors` |
 | Trends & charts | `trends`, `heatmap`, `calendar`, `compare` |
 | Projects & tools | `projects`, `project`, `tools`, `mcp-stats`, `shell-usage`, `activities`, `git` |
 | Models | `models`, `model`, `agents` |
-| Export & backup | `export`, `report`, `backup`, `status` |
+| Export & backup | `export`, `report`, `backup`, `status`, `share` |
 | Integration | `mcp`, `web`, `notify`, `snapshot`, `alerts` |
 | Config | `config`, `alias`, `pricing`, `warehouse` |
 | System | `metrics`, `version` |
@@ -126,7 +140,8 @@ rather than lipgloss, so a non-TTY gets a clean plain table rather than none.
 accent `39`/`41` for titles and token figures; header `99` for table headers and
 panel titles; `252`/`245`/`240` for the value → label → dim hierarchy; warn `220`
 for cost; error `203` for failures; free/success `42` for free models. Percentage
-colour is banded (`ui.PctColor`): `>= 90` error, `>= 70` warn, else success.
+colour is banded by the live dashboard's `pctColor`
+(`internal/live/live.go`): `>= 90` error, `>= 70` warn, else success.
 
 **Themes** (`internal/live/themes.go`): 15 named 7-colour palettes (background,
 foreground, accent, warning, success, error, muted) — `auto`, `dark`, `light`,
@@ -332,3 +347,15 @@ since been fixed are kept with their resolution so the reasoning is not lost.
 11. **`other`-bucket semantics for error analysis** are a deliberate trade-off,
    described in item 5. If recall matters more than precision, the pattern table
    is the lever — not the bucket.
+
+12. **Three documented claims were false and are corrected here.** The
+    source-of-truth section called `sessions.db` its sole input; 17
+    `transcripts/*.json` ATIF-v1.7 files exist alongside it carrying
+    `final_metrics` and per-step `steps`, so the wording now says it is the only
+    source *ingested* and names transcripts/ACP events as not yet read. The
+    command table said 58 commands and omitted `errors` and `share`; the
+    registry (the ordered list plus `cli.Register` calls) has 60, with cobra's
+    own `help`/`completion` excluded. Percentage banding was attributed to
+    `ui.PctColor`, which has no callers; the citation now names `pctColor` in
+    `internal/live/live.go`, which the live dashboard actually calls, and the
+    unreferenced `internal/ui` mirror is scheduled for removal.

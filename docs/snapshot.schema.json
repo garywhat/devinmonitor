@@ -154,6 +154,11 @@
       "enum": ["official", "estimated", "unknown"],
       "description": "Trust level for a group of numbers, using the vocabulary already established by the tool's provenance helpers. `official` = taken from Devin's own accounting (credit/ACU). `estimated` = derived from token pricing rather than the tool's own credit/ACU accounting, i.e. computed locally from tokens and a price table. `unknown` = no usable provenance. Separate from this enum value, the presentation layer must render a literal `(estimated)` suffix on any number whose confidence is not `official` (so both `estimated` and `unknown` are suffixed); that suffix is a display convention, not an enum value."
     },
+    "costBasis": {
+      "type": "string",
+      "enum": ["acu", "token_estimate", "mixed", "unavailable"],
+      "description": "The METER a cost figure came from — what it is measured with — as opposed to `confidence`, which says how trustworthy it is. The two dimensions are orthogonal and both are needed: a number can be an honest `estimated` token figure or an `official` ACU figure and the two are still different quantities. `acu` = Devin's own ACU/credit accounting (action complexity + VM time), i.e. the only basis that reflects what Devin bills. `token_estimate` = computed locally as token counts x the model's price in our pricing table; this includes a free or unpriced model, whose figure is 0 from OUR arithmetic even when Devin's own token counts (metadata.response_dimensions) are present — official token counts are not an ACU figure. `mixed` = the figure adds acu-billed and token-estimated costs together. `unavailable` = no basis could be established (no cost signal and no token counts). ACU and tokens have no definitional relationship and no conversion between them, so a consumer MUST NOT compare a figure whose basis is `acu` with one whose basis is `token_estimate`; when the basis is `mixed` the figure is in one currency but not in one unit, and the presentation layer must say so rather than present it as a plain comparable number."
+    },
     "pace": {
       "type": "object",
       "additionalProperties": false,
@@ -211,6 +216,7 @@
         "byModel",
         "acu",
         "costProvenance",
+        "costBasis",
         "todayCost",
         "weekCost",
         "monthCost",
@@ -235,6 +241,10 @@
         "costProvenance": {
           "$ref": "#/$defs/confidence",
           "description": "Trust level of the cost figures in this breakdown. `official` = reported by Devin's own accounting; `estimated` = derived from token pricing rather than the tool's own accounting; `unknown` = no usable provenance. On a free-tier plan, costs are legitimately 0.0 with any provenance."
+        },
+        "costBasis": {
+          "$ref": "#/$defs/costBasis",
+          "description": "The meter behind every cost figure in this breakdown (todayCost, weekCost, monthCost, totalCost and the byModel rows), as distinct from costProvenance, which grades how trustworthy they are. `mixed` means the figures add acu-billed and token-estimated costs together: the amounts are in one currency but not in one unit, and a presentation layer must surface that rather than let a reader compare them. On a free-tier machine with no ACU cost, this is `token_estimate` (our arithmetic on Devin's token counts), NOT `acu`."
         },
         "todayCost": {
           "type": "number",
@@ -262,7 +272,7 @@
         },
         "totalTokens": {
           "type": "integer",
-          "description": "Total tokens counted for the period (input + output, per the same convention as `share`)."
+          "description": "Total tokens counted for the period, cache INCLUDED (input + output + cacheRead + cacheWrite). This matches `blocks` and `share`; before v0.4.5 `share` excluded cache and disagreed with this field."
         },
         "activeSessions": {
           "type": "integer",
@@ -282,6 +292,7 @@
         "cacheWriteTokens",
         "requests",
         "cost",
+        "costBasis",
         "share"
       ],
       "properties": {
@@ -312,6 +323,10 @@
         "cost": {
           "type": "number",
           "description": "Cost attributed to this model in the configured currency (0.0 on a free-tier plan)."
+        },
+        "costBasis": {
+          "$ref": "#/$defs/costBasis",
+          "description": "The meter behind this row's `cost`, per row. A model table whose rows mix `acu` and `token_estimate` is exactly the surface where a reader would otherwise rank one model against another by incomparable numbers, so the basis travels on the row."
         },
         "share": {
           "type": "number",

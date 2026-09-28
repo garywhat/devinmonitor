@@ -54,6 +54,7 @@
         "cacheWriteTokens": 52000,
         "requests": 168,
         "cost": 0.0,
+        "costBasis": "token_estimate",
         "share": 57.0
       },
       {
@@ -64,11 +65,13 @@
         "cacheWriteTokens": 41000,
         "requests": 144,
         "cost": 0.0,
+        "costBasis": "token_estimate",
         "share": 43.0
       }
     ],
     "acu": true,
     "costProvenance": "estimated",
+    "costBasis": "token_estimate",
     "todayCost": 0.0,
     "weekCost": 0.0,
     "monthCost": 0.0,
